@@ -4,7 +4,7 @@ import { getPagesFromEnv, getPageFromEnv } from "@/lib/pages";
 import PageSwitcher from "@/components/PageSwitcher";
 import ConversationList from "@/components/ConversationList";
 import WebhookStatus from "@/components/WebhookStatus";
-import { MessageSquare, LogOut, Megaphone, Bug, Settings } from "lucide-react";
+import { MessageSquare, LogOut, Megaphone, Bug, Settings, Globe } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
@@ -44,6 +44,13 @@ export default async function PageLayout({ children, params }: Props) {
           >
             <Megaphone className="w-3.5 h-3.5" />
             Ads leads
+          </Link>
+          <Link
+            href="/uhchat"
+            className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 transition-colors"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Website chat
           </Link>
           <Link
             href="/debug"

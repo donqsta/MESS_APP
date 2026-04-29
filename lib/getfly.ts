@@ -177,6 +177,7 @@ export interface GetflyLeadInput {
   referral?: AdReferral;       // Dữ liệu quảng cáo (nếu có)
   pageToken?: string;          // Page access token — dùng để đọc comment bài đăng
   pageUrl?: string;            // URL trang web (web form) — dùng detect dự án từ domain
+  description?: string;        // Ghi chú cố định — bỏ qua AI khi được truyền
 }
 
 export interface GetflyLeadResult {
@@ -301,10 +302,14 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
   //   Facebook  → "Fanpage - {pageName}" / "Fanpage - {pageName} - Ads"
   const sourceName = buildSourceName(input.pageName, input.referral, isWebSource);
 
-  const needSummary = await summarizeLeadNeeds(input);
-  const needSummaryText = buildNeedSummaryText(needSummary);
-
-  const description = needSummaryText || `Khách để lại SĐT ${input.phone} để được tư vấn thêm.`;
+  let description: string;
+  if (input.description) {
+    description = input.description;
+  } else {
+    const needSummary = await summarizeLeadNeeds(input);
+    const needSummaryText = buildNeedSummaryText(needSummary);
+    description = needSummaryText || `Khách để lại SĐT ${input.phone} để được tư vấn thêm.`;
+  }
 
   const payload: Record<string, unknown> = {
     account_name: input.accountName,
