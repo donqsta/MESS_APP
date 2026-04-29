@@ -487,7 +487,7 @@ export async function getMessages(sessionId: string): Promise<{ messages: Uhchat
  */
 export async function fetchAllNewChats(
   seenIds: Set<string>,
-  getLeadById: (id: string) => import("@/lib/uhchat-store").UhchatLead | undefined,
+  getLeadById: (id: string) => UhchatLead | undefined,
   updateMessages: (
     id: string,
     messages: UhchatMessage[],
