@@ -52,13 +52,6 @@ export default async function PageLayout({ children, params }: Props) {
             <Bug className="w-3.5 h-3.5" />
             Webhook log
           </Link>
-          <Link
-            href="/settings"
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors ml-auto"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            Cài đặt
-          </Link>
         </div>
 
         <WebhookStatus pageId={pageId} />
@@ -67,15 +60,24 @@ export default async function PageLayout({ children, params }: Props) {
           <div className="text-xs text-gray-500 truncate">
             <span className="font-medium">{page.name}</span>
           </div>
-          <form action="/api/auth/logout" method="POST">
-            <button
-              type="submit"
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
+          <div className="flex items-center gap-3">
+            <Link
+              href="/settings"
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              Đăng xuất
-            </button>
-          </form>
+              <Settings className="w-3.5 h-3.5" />
+              Cài đặt
+            </Link>
+            <form action="/api/auth/logout" method="POST">
+              <button
+                type="submit"
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Đăng xuất
+              </button>
+            </form>
+          </div>
         </div>
       </aside>
 

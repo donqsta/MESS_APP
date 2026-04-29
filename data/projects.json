@@ -1,0 +1,98 @@
+{
+  "_comment": "Danh sách dự án BĐS — IDs đồng bộ từ Getfly API (GET /api/v6/accounts/custom_fields).",
+  "_howto": "Thêm dự án mới: thêm vào 'projects' với id (từ Getfly), name, keywords, domains. Hoặc gọi /api/bot/sync-projects để tự động sync từ Getfly.",
+  "fallbackId": 41,
+  "projects": [
+    {
+      "id": 1,
+      "name": "Vạn Phúc City",
+      "keywords": ["vạn phúc", "van phuc", "vanphuc", "van-phuc"],
+      "domains": ["vanphucity.tnpholdings.vn", "vanphuc"],
+      "pageIds": ["280565692725266"]
+    },
+    {
+      "id": 2,
+      "name": "Picity Sky Park/SkyZen",
+      "keywords": ["picity", "skypark", "sky park", "sky-park", "skyzen", "sky zen", "sky-zen"],
+      "domains": ["picityskypark.city", "picityskyzen.tnpholdings.vn", "picity"],
+      "pageIds": ["349848852373105"]
+    },
+    {
+      "id": 3,
+      "name": "Artisan Park",
+      "keywords": ["artisan", "artisan park"],
+      "domains": ["artisanpark.tnpholdings.vn", "artisan"],
+      "pageIds": []
+    },
+    {
+      "id": 4,
+      "name": "Celadon City",
+      "keywords": ["celadon", "celadon city"],
+      "domains": ["celadon-city.net", "celadon"],
+      "pageIds": []
+    },
+    {
+      "id": 5,
+      "name": "Springville",
+      "keywords": ["springville", "spring ville", "spring-ville"],
+      "domains": ["spring-ville.city", "springville"],
+      "pageIds": ["1691322607843700"]
+    },
+    {
+      "id": 6,
+      "name": "MT Eastmark City",
+      "keywords": ["eastmark", "mt eastmark", "mt-eastmark", "mteastmark"],
+      "domains": ["mteastmark", "eastmark"],
+      "pageIds": []
+    },
+    {
+      "id": 7,
+      "name": "Elysian",
+      "keywords": ["elysian"],
+      "domains": ["elysiangamuda.net", "elysian"],
+      "pageIds": []
+    },
+    {
+      "id": 8,
+      "name": "The Meadow",
+      "keywords": ["meadow", "the meadow"],
+      "domains": ["meadowbinhchanh.com.vn", "meadow"],
+      "pageIds": []
+    },
+    {
+      "id": 9,
+      "name": "Prime Master",
+      "keywords": ["prime master", "primemaster", "prime-master"],
+      "domains": ["primemaster", "prime-master"],
+      "pageIds": ["646002805264466"]
+    },
+    {
+      "id": 10,
+      "name": "Eaton Park",
+      "keywords": ["eaton park", "eatonpark", "eaton-park", "eaton"],
+      "domains": ["eatonpark", "eaton-park"],
+      "pageIds": []
+    },
+    {
+      "id": 40,
+      "name": "CCN Tây Bắc ĐHĐ",
+      "keywords": ["ccn", "tây bắc", "tay bac", "đhđ", "dhd"],
+      "domains": [],
+      "pageIds": []
+    },
+    {
+      "id": 42,
+      "name": "Emerald Boulevard",
+      "keywords": ["emerald", "emerald boulevard"],
+      "domains": ["emerald"],
+      "pageIds": []
+    },
+    {
+      "id": 41,
+      "name": "Chưa rõ DA",
+      "keywords": [],
+      "domains": [],
+      "pageIds": ["1584010335165016", "1807504546139538", "245115559231275", "729397667519994"]
+    }
+  ]
+}

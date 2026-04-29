@@ -1,0 +1,190 @@
+// AUTO-DETECT DỰ ÁN TỪ DOMAIN
+// ============================================
+function get_du_an_quan_tam() {
+    $domain = $_SERVER['HTTP_HOST'] ?? '';
+    $uri    = $_SERVER['REQUEST_URI'] ?? '';
+    $full   = $domain . $uri;
+
+    $map = [
+        // ID => keywords trong domain/url
+        '1'  => ['vanphuc', 'van-phuc', 'vạn phúc'],
+        '2'  => ['picity', 'skypark', 'skyzen', 'sky-park', 'sky-zen'],
+        '3'  => ['artisan'],
+        '4'  => ['celadon'],
+        '5'  => ['springville', 'spring-ville'],
+        '6'  => ['mteastmark', 'mt-eastmark', 'eastmark'],
+        '7'  => ['elysian'],
+        '8'  => ['meadow'],
+        '9'  => ['primemaster', 'prime-master'],
+        '10' => ['eatonpark', 'eaton-park', 'eaton'],
+    ];
+
+    foreach ($map as $id => $keywords) {
+        foreach ($keywords as $kw) {
+            if (stripos($full, $kw) !== false) {
+                return $id;
+            }
+        }
+    }
+
+    return ''; // không xác định được
+}
+
+// ============================================
+// LƯU UTM VÀO COOKIE KHI USER VÀO TRANG
+// ============================================
+add_action('init', function () {
+    $utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_user', 'utm_account', 'utm_id'];
+    foreach ($utmKeys as $key) {
+        if (!empty($_GET[$key])) {
+            setcookie($key, sanitize_text_field($_GET[$key]), time() + 30 * DAY_IN_SECONDS, '/');
+            $_COOKIE[$key] = sanitize_text_field($_GET[$key]);
+        }
+    }
+});
+
+// ============================================
+// HELPER: BUILD PAYLOAD & GỬI GETFLY
+// ============================================
+function send_to_getfly($name, $phone, $email, $description) {
+    if (!$phone) return;
+
+    $utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_user', 'utm_account', 'utm_id'];
+    $utmParams = [];
+    foreach ($utmKeys as $key) {
+        $utmParams[$key] = !empty($_GET[$key]) ? sanitize_text_field($_GET[$key])
+                         : (!empty($_COOKIE[$key]) ? sanitize_text_field($_COOKIE[$key]) : '');
+    }
+
+    $du_an_id = get_du_an_quan_tam();
+
+    $data_form = [
+        "user_id"             => 0,
+        "recipient"           => null,
+        "token_api"           => "",
+        "opportunity_status"  => null,
+        "opp_type_source"     => home_url(),
+        "opp_source_content"  => home_url(),
+        "account_type"        => [],
+        "key"                 => "z2s0xamGEb3fgIFekqIYw4JVXujB7YGAObRHQNttzLw3eMXXIn",
+        "opp_url_source"      => home_url($_SERVER['REQUEST_URI']),
+        "account_name"        => $name ?: 'Không tên',
+        "account_phone"       => $phone,
+        "account_email"       => $email,
+        "account_description" => $description,
+        "custom_fields"       => $du_an_id ? ["du_an_quan_tam" => $du_an_id] : (object)[],
+        "utm_params"          => [
+            "utm_source"   => $utmParams['utm_source'],
+            "utm_campaign" => $utmParams['utm_campaign'],
+            "utm_medium"   => $utmParams['utm_medium'],
+            "utm_content"  => $utmParams['utm_content'],
+            "utm_term"     => $utmParams['utm_term'],
+            "utm_user"     => $utmParams['utm_user'],
+            "utm_account"  => $utmParams['utm_account'],
+            "utm_id"       => $utmParams['utm_id'],
+            "sources"      => home_url('/')
+        ]
+    ];
+
+    wp_remote_post('https://tnpholdings.getflycrm.com/api/opp/registed', [
+        'method'   => 'POST',
+        'blocking' => false,
+        'body'     => [
+            'data_form'                    => json_encode($data_form),
+            'verify_with_google_recaptcha' => 'false'
+        ]
+    ]);
+}
+
+// ============================================
+// FLUENT FORMS
+// ============================================
+add_action('fluentform/submission_inserted', function ($entryId, $formData, $form) {
+
+    $name = '';
+    foreach (['names', 'name', 'full_name', 'fullname', 'ho_ten'] as $key) {
+        if (!empty($formData[$key])) {
+            $val = $formData[$key];
+            $name = is_array($val) ? implode(' ', array_filter([$val['first_name'] ?? '', $val['middle_name'] ?? '', $val['last_name'] ?? ''])) : $val;
+            break;
+        }
+    }
+
+    $phone = '';
+    foreach (['phone', 'input_text', 'dien_thoai', 'sdt', 'mobile', 'tel'] as $key) {
+        if (!empty($formData[$key]) && is_string($formData[$key])) { $phone = $formData[$key]; break; }
+    }
+    if (!$phone) {
+        foreach ($formData as $val) {
+            if (is_string($val) && preg_match('/^(0|\+84)[0-9]{8,10}$/', trim($val))) { $phone = trim($val); break; }
+        }
+    }
+
+    $email = '';
+    foreach (['email', 'email_address', 'mail'] as $key) {
+        if (!empty($formData[$key]) && is_string($formData[$key])) { $email = $formData[$key]; break; }
+    }
+    if (!$email) {
+        foreach ($formData as $val) {
+            if (is_string($val) && filter_var(trim($val), FILTER_VALIDATE_EMAIL)) { $email = trim($val); break; }
+        }
+    }
+
+    $description = '';
+    foreach (['product', 'products', 'checkbox', 'interest', 'san_pham', 'loai_can', 'can_ho'] as $key) {
+        if (!empty($formData[$key])) { $val = $formData[$key]; $description = is_array($val) ? implode(', ', $val) : $val; break; }
+    }
+    if (!$description) {
+        foreach ($formData as $key => $val) {
+            if (in_array($key, ['names', 'name', 'email', 'phone', 'input_text'])) continue;
+            if (is_array($val) && count($val) > 0) { $description = implode(', ', $val); break; }
+        }
+    }
+
+    send_to_getfly($name, $phone, $email, $description);
+
+}, 10, 3);
+
+// ============================================
+// ELEMENTOR FORMS
+// ============================================
+add_action('elementor_pro/forms/new_record', function ($record, $handler) {
+
+    $raw = $record->get('fields');
+
+    $name = '';
+    foreach ($raw as $id => $field) {
+        if (!$name && (in_array($id, ['name', 'full_name', 'ho_ten', 'names']) ||
+            in_array(strtolower($field['title'] ?? ''), ['name', 'họ tên', 'ho ten', 'tên', 'ten', 'full name']))) {
+            $name = $field['value'];
+        }
+    }
+
+    $phone = '';
+    foreach ($raw as $field) {
+        if (!$phone && preg_match('/^(0|\+84)[0-9]{8,10}$/', trim($field['value']))) {
+            $phone = trim($field['value']);
+        }
+    }
+
+    $email = '';
+    foreach ($raw as $field) {
+        if (!$email && filter_var(trim($field['value']), FILTER_VALIDATE_EMAIL)) {
+            $email = trim($field['value']);
+        }
+    }
+
+    $description = '';
+    foreach ($raw as $id => $field) {
+        if (in_array($id, ['name', 'phone', 'email'])) continue;
+        $val = $field['value'];
+        if (empty($val) || $val === $name || $val === $phone || $val === $email) continue;
+        if (!preg_match('/^(0|\+84)[0-9]{8,10}$/', trim($val)) && !filter_var(trim($val), FILTER_VALIDATE_EMAIL)) {
+            $description = is_array($val) ? implode(', ', $val) : $val;
+            break;
+        }
+    }
+
+    send_to_getfly($name, $phone, $email, $description);
+
+}, 10, 2);

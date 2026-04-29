@@ -2,7 +2,7 @@ import { getSession } from "@/lib/session";
 import { getPagesFromEnv } from "@/lib/pages";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { MessageSquare, Building2, LogOut } from "lucide-react";
+import { MessageSquare, Building2, LogOut, Settings } from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -21,15 +21,24 @@ export default async function DashboardPage() {
           <MessageSquare className="w-5 h-5" />
           <span className="font-bold text-lg">Mess App</span>
         </div>
-        <form action="/api/auth/logout" method="POST">
-          <button
-            type="submit"
-            className="flex items-center gap-1 text-sm text-blue-200 hover:text-white transition-colors"
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="flex items-center gap-1.5 text-sm text-blue-200 hover:text-white transition-colors"
           >
-            <LogOut className="w-4 h-4" />
-            Đăng xuất
-          </button>
-        </form>
+            <Settings className="w-4 h-4" />
+            Cài đặt
+          </Link>
+          <form action="/api/auth/logout" method="POST">
+            <button
+              type="submit"
+              className="flex items-center gap-1 text-sm text-blue-200 hover:text-white transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Đăng xuất
+            </button>
+          </form>
+        </div>
       </header>
 
       <div className="flex-1 flex flex-col items-center justify-center p-6">

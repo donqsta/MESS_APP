@@ -8,6 +8,7 @@ import { handleBotMessage } from "@/lib/ai-bot/botHandler";
 import { getConversationIdBySender, getConversation } from "@/lib/ai-bot/botMemory";
 import { getSenderProfile } from "@/lib/facebook";
 import { startProactiveChecker } from "@/lib/ai-bot/proactiveChecker";
+import { addLeadUserMessage, getLeadUserMessages } from "@/lib/lead-context-store";
 
 // Khởi động proactive checker một lần duy nhất (singleton qua process object)
 startProactiveChecker();
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
           `${pageId}_${senderId}`;
 
         publish({ pageId, senderId, text, mid, timestamp, referral });
+        addLeadUserMessage(pageId, senderId, text, timestamp);
 
         // Nếu từ quảng cáo → ghi vào ad-store
         if (referral?.source === "ADS") {
@@ -127,6 +129,7 @@ export async function POST(req: NextRequest) {
               pageId,
               senderId,
               messageText: text,
+              chatHistory: getLeadUserMessages(pageId, senderId),
               referral: activeReferral,
               pageToken: page?.accessToken,
             });

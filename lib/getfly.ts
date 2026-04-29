@@ -1,50 +1,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AdReferral } from "@/lib/webhook-store";
 import { getPostFirstComment } from "@/lib/facebook";
+import { matchProject, matchByKeyword, getProjectForPage } from "@/lib/projectMatcher";
 
 const GETFLY_BASE_URL = process.env.GETFLY_BASE_URL ?? "";
 const GETFLY_API_KEY = process.env.GETFLY_API_KEY ?? "";
+const GETFLY_RELATION_ID_LEAD_MOI = Number(process.env.GETFLY_RELATION_ID_LEAD_MOI ?? "1");
 
-// ── Dự án quan tâm: ID trên Getfly CRM ──────────────────────────────────────
-const PROJECT_ID = {
-  VAN_PHUC: 1,
-  PICITY_SKYZEN: 2,
-  ARTISAN: 3,
-  CELADON: 4,
-  SPRINGVILLE: 5,
-  MT_EASTMARK: 6,
-  ELYSIAN: 7,
-  THE_MEADOW: 8,
-  PRIME_MASTER: 9,
-  EATON_PARK: 10,
-  CHUA_RO: 41,
-} as const;
-
-// Từ khóa → ID dự án (kiểm tra trong text tin nhắn hoặc tên ads)
-const PROJECT_KEYWORDS: Array<{ patterns: RegExp; id: number }> = [
-  { patterns: /v[aạ]n\s*ph[uú]c/i, id: PROJECT_ID.VAN_PHUC },
-  { patterns: /picity|skyzen|sky\s*zen|sky\s*park/i, id: PROJECT_ID.PICITY_SKYZEN },
-  { patterns: /artisan/i, id: PROJECT_ID.ARTISAN },
-  { patterns: /celadon/i, id: PROJECT_ID.CELADON },
-  { patterns: /spring\s*ville|springville/i, id: PROJECT_ID.SPRINGVILLE },
-  { patterns: /eastmark|mt\s*eastmark/i, id: PROJECT_ID.MT_EASTMARK },
-  { patterns: /elysian/i, id: PROJECT_ID.ELYSIAN },
-  { patterns: /the\s*meadow|meadow/i, id: PROJECT_ID.THE_MEADOW },
-  { patterns: /prime\s*master/i, id: PROJECT_ID.PRIME_MASTER },
-  { patterns: /eaton\s*park|eaton/i, id: PROJECT_ID.EATON_PARK },
-];
-
-// Fallback theo Fanpage ID
-const PAGE_DEFAULT_PROJECT: Record<string, number> = {
-  "1691322607843700": PROJECT_ID.SPRINGVILLE,   // Spring Ville
-  "280565692725266": PROJECT_ID.VAN_PHUC,        // Khu ĐT Vạn Phúc
-  "646002805264466": PROJECT_ID.PRIME_MASTER,    // Prime Master
-  "349848852373105": PROJECT_ID.PICITY_SKYZEN,   // Pi Group
-  "1584010335165016": PROJECT_ID.CHUA_RO,        // Khải Hoàn Imperial
-  "1807504546139538": PROJECT_ID.CHUA_RO,        // Gamuda Land VN (nhiều DA → cần phân tích)
-  "245115559231275": PROJECT_ID.CHUA_RO,         // TNP Holdings
-  "729397667519994": PROJECT_ID.CHUA_RO,         // TNP Vibes
-};
+// Fanpage fallback đọc từ data/projects.json (field pageIds) — không còn hardcode
 
 // ── Bắt SĐT Việt Nam (hỗ trợ viết liền, cách khoảng, dấu chấm, gạch ngang) ──
 // Ví dụ nhận diện được:
@@ -139,11 +102,13 @@ export async function extractPhoneNumbers(text: string): Promise<string[]> {
 }
 
 // ── Phát hiện dự án quan tâm ─────────────────────────────────────────────────
-function matchProjectFromText(text: string): number | null {
-  for (const { patterns, id } of PROJECT_KEYWORDS) {
-    if (patterns.test(text)) return id;
-  }
-  return null;
+
+/**
+ * @deprecated Dùng matchProject() từ lib/projectMatcher.ts cho async + AI fallback.
+ * Giữ lại để tương thích với code cũ (sync, keyword-only).
+ */
+export function matchProjectFromText(text: string): number | null {
+  return matchByKeyword(text);
 }
 
 export async function detectProject(
@@ -152,14 +117,14 @@ export async function detectProject(
   pageId: string,
   pageToken?: string
 ): Promise<number[]> {
-  // Ưu tiên 1: Từ khóa trong tin nhắn
-  const fromMsg = matchProjectFromText(messageText);
+  // Ưu tiên 1: Từ khóa / AI trong tin nhắn
+  const fromMsg = await matchProject(messageText);
   if (fromMsg) return [fromMsg];
 
   // Ưu tiên 2: Tên quảng cáo (ad_title) hoặc ref param
   if (referral) {
     const adText = [referral.ad_title, referral.ref].filter(Boolean).join(" ");
-    const fromAd = matchProjectFromText(adText);
+    const fromAd = await matchProject(adText);
     if (fromAd) return [fromAd];
   }
 
@@ -167,7 +132,7 @@ export async function detectProject(
   if (referral?.post_id && pageToken) {
     const firstComment = await getPostFirstComment(referral.post_id, pageToken);
     if (firstComment) {
-      const fromComment = matchProjectFromText(firstComment);
+      const fromComment = await matchProject(firstComment);
       if (fromComment) {
         console.log(`[Getfly] Phát hiện dự án từ comment bài đăng (post_id=${referral.post_id}): ${fromComment}`);
         return [fromComment];
@@ -175,27 +140,43 @@ export async function detectProject(
     }
   }
 
-  // Ưu tiên 3: Fallback theo fanpage
-  const fallback = PAGE_DEFAULT_PROJECT[pageId] ?? PROJECT_ID.CHUA_RO;
-  return [fallback];
+  // Ưu tiên 3: Fallback theo fanpage (đọc từ pageIds trong projects.json)
+  return [getProjectForPage(pageId)];
 }
 
 // ── Xác định nguồn khách hàng ────────────────────────────────────────────────
-export function buildSourceName(pageName: string, referral: AdReferral | undefined): string {
+
+/**
+ * Xây dựng tên nguồn Getfly theo loại:
+ * - Facebook Fanpage: "Fanpage - {pageName}" / "Fanpage - {pageName} - Ads"
+ * - Website form:     "Website - {siteName}" / "Website - {siteName} - Ads"
+ */
+export function buildSourceName(pageName: string, referral: AdReferral | undefined, isWeb = false): string {
   const hasAd = referral?.source === "ADS" || !!referral?.ad_id;
-  return hasAd ? `${pageName} - Facebook ads` : pageName;
+  const prefix = isWeb ? "Website" : "Fanpage";
+  return hasAd ? `${prefix} - ${pageName} - Ads` : `${prefix} - ${pageName}`;
+}
+
+/**
+ * Nguồn cho lead từ web form.
+ * @deprecated Dùng buildSourceName(siteName, referral, true) thay thế.
+ */
+export function buildWebSourceName(siteName: string, hasAds: boolean): string {
+  return hasAds ? `Website - ${siteName} - Ads` : `Website - ${siteName}`;
 }
 
 // ── Tạo khách hàng mới trên Getfly CRM ──────────────────────────────────────
 export interface GetflyLeadInput {
-  accountName: string;         // Tên Facebook
+  accountName: string;         // Tên Facebook hoặc tên khách từ form
   phone: string;               // SĐT bắt được
-  pageName: string;            // Tên Fanpage
-  pageId: string;              // ID Fanpage
-  senderId: string;            // Facebook Page-Scoped User ID
-  messageText: string;         // Tin nhắn chứa SĐT
+  pageName: string;            // Tên Fanpage hoặc tên website
+  pageId: string;              // ID Fanpage; bắt đầu "web" nếu từ web form
+  senderId: string;            // Facebook PSID hoặc phone (web form)
+  messageText: string;         // Tin nhắn / mô tả chứa SĐT
+  chatHistory?: string[];      // Lịch sử chat gần nhất để AI đọc nhu cầu
   referral?: AdReferral;       // Dữ liệu quảng cáo (nếu có)
   pageToken?: string;          // Page access token — dùng để đọc comment bài đăng
+  pageUrl?: string;            // URL trang web (web form) — dùng detect dự án từ domain
 }
 
 export interface GetflyLeadResult {
@@ -206,39 +187,144 @@ export interface GetflyLeadResult {
   duplicate?: boolean;
 }
 
+function maskPhone(phone: string): string {
+  if (phone.length < 7) return phone;
+  return `${phone.slice(0, 3)}****${phone.slice(-3)}`;
+}
+
+
+interface LeadNeedSummary {
+  productName?: string;
+  area?: string;
+  budget?: string;
+  note?: string;
+}
+
+function buildNeedSummaryText(summary: LeadNeedSummary | null): string {
+  if (!summary) return "";
+
+  const parts: string[] = [];
+  if (summary.productName) parts.push(`Khách quan tâm ${summary.productName}`);
+  if (summary.area) parts.push(`diện tích ${summary.area}`);
+  if (summary.budget) parts.push(`mức giá/ngân sách ${summary.budget}`);
+  if (summary.note) parts.push(summary.note);
+
+  if (parts.length === 0) return "";
+  return parts.join(". ").replace(/\.\s*$/g, "") + ".";
+}
+
+async function summarizeLeadNeeds(input: GetflyLeadInput): Promise<LeadNeedSummary | null> {
+  const gemini = getGemini();
+  if (!gemini) return null;
+
+  const mergedHistory = [...(input.chatHistory ?? []), input.messageText]
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Chống lặp tin nhắn giống nhau (thường xảy ra khi message hiện tại đã có trong history)
+  const seen = new Set<string>();
+  const dedupedHistory = mergedHistory.filter((msg) => {
+    const key = msg.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const rawHistory = dedupedHistory.slice(-15);
+  if (rawHistory.length === 0) return null;
+
+  const historyText = rawHistory.map((m, idx) => `${idx + 1}. ${m}`).join("\n");
+
+  const prompt =
+    `Bạn là trợ lý CRM BĐS. Trích xuất nhu cầu khách từ đoạn chat sau.\n` +
+    `Mục tiêu lấy 3 thông tin chính nếu có đề cập:\n` +
+    `- productName: tên dự án/sản phẩm (vd: căn hộ 2PN, shophouse, Springville...)\n` +
+    `- area: diện tích (vd: 65m2, 5x20, khoảng 70-80m2...)\n` +
+    `- budget: mức giá/ngân sách (vd: 3 tỷ, tầm 40tr/m2...)\n` +
+    `- note: ghi chú ngắn 1 câu về câu hỏi/ưu tiên của khách (vd: hỏi ở đâu, cách sân bay bao xa, pháp lý, tiến độ...)\n\n` +
+    `QUAN TRỌNG:\n` +
+    `- Không đưa số điện thoại vào productName/area/budget/note.\n` +
+    `- Không lặp lại cùng một thông tin nhiều lần.\n` +
+    `- Nếu khách hỏi về vị trí, khoảng cách, tiện ích thì ưu tiên đưa vào note rõ ràng.\n\n` +
+    `Nếu không thấy thông tin thì để chuỗi rỗng "".\n` +
+    `Trả về JSON duy nhất theo schema:\n` +
+    `{"productName":"","area":"","budget":"","note":""}\n\n` +
+    `ĐOẠN CHAT:\n${historyText}`;
+
+  try {
+    const model = gemini.getGenerativeModel({
+      model: "gemini-3.1-pro-preview",
+      generationConfig: { responseMimeType: "application/json", temperature: 0 },
+    });
+
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim();
+    const parsed = JSON.parse(raw) as Partial<LeadNeedSummary>;
+
+    return {
+      productName: String(parsed.productName ?? "").trim(),
+      area: String(parsed.area ?? "").trim(),
+      budget: String(parsed.budget ?? "").trim(),
+      note: String(parsed.note ?? "").trim(),
+    };
+  } catch (err) {
+    console.warn("[Getfly] AI phân tích nhu cầu lỗi:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLeadResult> {
   if (!GETFLY_BASE_URL || !GETFLY_API_KEY) {
     console.warn("[Getfly] Chưa cấu hình GETFLY_BASE_URL hoặc GETFLY_API_KEY");
     return { success: false, error: "Chưa cấu hình Getfly" };
   }
 
-  const projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken);
-  const sourceName = buildSourceName(input.pageName, input.referral);
+  const isWebSource = input.pageId.startsWith("web");
 
-  const description = [
-    `[Messenger] Tin nhắn: "${input.messageText}"`,
-    input.referral?.ad_title ? `Quảng cáo: ${input.referral.ad_title}` : "",
-    `Fanpage: ${input.pageName}`,
-  ]
-    .filter(Boolean)
-    .join(" | ");
+  // Detect dự án:
+  //   Web form  → ưu tiên từ pageUrl (domain + AI), sau đó messageText
+  //   Facebook  → từ messageText / referral / fanpage
+  let projectIds: number[];
+  if (isWebSource && input.pageUrl) {
+    const fromUrl = await matchProject(input.pageUrl);
+    if (fromUrl) {
+      projectIds = [fromUrl];
+    } else {
+      projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken);
+    }
+  } else {
+    projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken);
+  }
+
+  // Tên nguồn:
+  //   Web form  → "Website - {siteName}" / "Website - {siteName} - Ads"
+  //   Facebook  → "Fanpage - {pageName}" / "Fanpage - {pageName} - Ads"
+  const sourceName = buildSourceName(input.pageName, input.referral, isWebSource);
+
+  const needSummary = await summarizeLeadNeeds(input);
+  const needSummaryText = buildNeedSummaryText(needSummary);
+
+  const description = needSummaryText || `Khách để lại SĐT ${input.phone} để được tư vấn thêm.`;
 
   const payload: Record<string, unknown> = {
     account_name: input.accountName,
     phone_office: input.phone,
-    account_source_names: [sourceName],
+    relation_id: GETFLY_RELATION_ID_LEAD_MOI,
+    account_source_names: [sourceName],   // tên nguồn — Getfly tự tạo nếu chưa có
     account_type_names: ["KH tiềm năng"],
     description,
     custom_fields: {
       du_an_quan_tam: projectIds,
-      facebook_link: `facebook.com/profile/${input.senderId}`,
+      facebook_link: isWebSource
+        ? (input.pageUrl || "")
+        : `facebook.com/profile/${input.senderId}`,
     },
   };
 
   try {
     console.log("[Getfly] Tạo lead:", { phone: input.phone, project: projectIds, source: sourceName });
 
-    const res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
+    let res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -247,7 +333,7 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
+    let data = await res.json();
 
     if (!res.ok || data.error) {
       const msg: string = data.message ?? data.error ?? "Lỗi không xác định";
@@ -256,6 +342,22 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
       const isDuplicate = msg.toLowerCase().includes("trùng") || msg.toLowerCase().includes("duplicate") || res.status === 422;
 
       console.warn("[Getfly] Tạo lead thất bại:", msg);
+      console.warn("[Getfly] Chi tiết lỗi:", {
+        status: res.status,
+        statusText: res.statusText,
+        response: data,
+        payloadPreview: {
+          account_name: input.accountName || "(trống)",
+          phone_office: maskPhone(input.phone),
+          relation_id: GETFLY_RELATION_ID_LEAD_MOI,
+          account_source_names: [sourceName],
+          projectIds,
+          hasReferral: !!input.referral,
+          ad_title: input.referral?.ad_title ?? "",
+          pageName: input.pageName,
+          senderId: input.senderId,
+        },
+      });
       return { success: false, error: msg, duplicate: isDuplicate };
     }
 
