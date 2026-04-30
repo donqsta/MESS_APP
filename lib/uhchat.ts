@@ -22,6 +22,8 @@
  */
 
 import https from "https";
+import fs from "fs";
+import path from "path";
 import { extractPhoneNumbers } from "@/lib/getfly";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -68,14 +70,44 @@ interface SessionCache {
 let _cache: SessionCache | null = null;
 const SESSION_TTL_MS = 25 * 60 * 1000; // 25 phút
 
+// ── Cookie file persistence ────────────────────────────────────────────────────
+
+const COOKIE_FILE = path.join(process.cwd(), "data", "uhchat-cookie.json");
+
+function saveCookieToFile(cookie: string | null): void {
+  try {
+    if (cookie === null) {
+      if (fs.existsSync(COOKIE_FILE)) fs.unlinkSync(COOKIE_FILE);
+    } else {
+      fs.writeFileSync(COOKIE_FILE, JSON.stringify({ cookie }), "utf-8");
+    }
+  } catch (e) {
+    console.error("[uhchat] Không thể ghi cookie file:", e);
+  }
+}
+
+function loadCookieFromFile(): string | null {
+  try {
+    if (!fs.existsSync(COOKIE_FILE)) return null;
+    const raw = fs.readFileSync(COOKIE_FILE, "utf-8");
+    const parsed = JSON.parse(raw) as { cookie?: string };
+    return parsed.cookie?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Đặt cookie thủ công (từ browser DevTools) — bỏ qua auto-login */
 export function setManualCookie(cookie: string): void {
   if (!cookie) {
     _cache = null;
+    saveCookieToFile(null);
     console.log("[uhchat] Đã xóa manual cookie");
     return;
   }
-  _cache = { cookie, expiresAt: Date.now() + 8 * 60 * 60 * 1000, isManual: true };
+  // Lưu vô thời hạn trong file; in-memory dùng TTL rất dài (1 năm)
+  _cache = { cookie, expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000, isManual: true };
+  saveCookieToFile(cookie);
   console.log("[uhchat] Đã lưu manual cookie:", cookie.slice(0, 60));
 }
 
@@ -248,17 +280,25 @@ async function authedGetRaw(cookie: string, url: string): Promise<string> {
 // ── Cookie hợp lệ ─────────────────────────────────────────────────────────────
 
 async function getCookie(): Promise<string> {
-  // 1. Manual cookie (từ UI hoặc in-memory) — ưu tiên cao nhất
+  // 1. Manual cookie (in-memory) — ưu tiên cao nhất
   if (_cache && Date.now() < _cache.expiresAt) return _cache.cookie;
 
-  // 2. UHCHAT_COOKIE từ .env.local (fallback cứng)
+  // 2. Manual cookie từ file (persist vô thời hạn, ghi đè khi có cookie mới)
+  const fileCookie = loadCookieFromFile();
+  if (fileCookie) {
+    _cache = { cookie: fileCookie, expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000, isManual: true };
+    console.log("[uhchat] Khôi phục manual cookie từ file");
+    return fileCookie;
+  }
+
+  // 3. UHCHAT_COOKIE từ .env.local (fallback cứng)
   const envCookie = process.env.UHCHAT_COOKIE?.trim();
   if (envCookie) {
     _cache = { cookie: envCookie, expiresAt: Date.now() + 8 * 60 * 60 * 1000, isManual: true };
     return envCookie;
   }
 
-  // 3. Auto-login bằng email/password
+  // 4. Auto-login bằng email/password
   return loginUhchat();
 }
 

@@ -54,6 +54,19 @@
     return utm;
   }
 
+  /** Kiểm tra URL hiện tại có chứa tham số tracking ads không */
+  function detectHasAds(utm) {
+    if (utm.utm_source || utm.utm_campaign) return true;
+    var params = new URLSearchParams(window.location.search);
+    return !!(
+      params.get('gclid') ||
+      params.get('gad_source') ||
+      params.get('gad_campaignid') ||
+      params.get('fbclid') ||
+      params.get('msclkid')
+    );
+  }
+
   function normalizePhone(raw) {
     var digits = raw.replace(/[^\d+]/g, '');
     if (digits.startsWith('+84')) digits = '0' + digits.slice(3);
@@ -125,7 +138,7 @@
     sentPhones[data.phone] = true;
 
     var utm    = getUTM();
-    var hasAds = !!(utm.utm_source || utm.utm_campaign);
+    var hasAds = detectHasAds(utm);
 
     var payload = {
       name:        data.name,

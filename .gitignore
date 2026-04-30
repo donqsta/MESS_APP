@@ -28,6 +28,9 @@ npm-debug.log*
 # env files
 .env*.local
 
+# uhchat session (sensitive credential, auto-generated)
+data/uhchat-cookie.json
+
 # vercel
 .vercel
 

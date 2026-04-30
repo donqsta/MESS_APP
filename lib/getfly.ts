@@ -151,10 +151,28 @@ export async function detectProject(
  * - Facebook Fanpage: "Fanpage - {pageName}" / "Fanpage - {pageName} - Ads"
  * - Website form:     "Website - {siteName}" / "Website - {siteName} - Ads"
  */
-export function buildSourceName(pageName: string, referral: AdReferral | undefined, isWeb = false): string {
-  const hasAd = referral?.source === "ADS" || !!referral?.ad_id;
+export function buildSourceName(pageName: string, referral: AdReferral | undefined, isWeb = false, pageUrl?: string): string {
+  const hasAdReferral = referral?.source === "ADS" || !!referral?.ad_id;
+
+  if (isWeb && pageUrl) {
+    try {
+      const parsed = new URL(pageUrl);
+      const origin = parsed.origin + "/";
+      const hasAdParam = hasAdReferral
+        || !!parsed.searchParams.get("gclid")
+        || !!parsed.searchParams.get("gad_source")
+        || !!parsed.searchParams.get("gad_campaignid")
+        || !!parsed.searchParams.get("fbclid")
+        || !!parsed.searchParams.get("msclkid")
+        || !!parsed.searchParams.get("utm_source");
+      return hasAdParam ? `website ${origin} ads` : `website ${origin}`;
+    } catch {
+      // fallback bên dưới nếu URL không hợp lệ
+    }
+  }
+
   const prefix = isWeb ? "Website" : "Fanpage";
-  return hasAd ? `${prefix} - ${pageName} - Ads` : `${prefix} - ${pageName}`;
+  return hasAdReferral ? `${prefix} - ${pageName} - Ads` : `${prefix} - ${pageName}`;
 }
 
 /**
@@ -298,9 +316,9 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
   }
 
   // Tên nguồn:
-  //   Web form  → "Website - {siteName}" / "Website - {siteName} - Ads"
+  //   Web form  → "website {url}" / "website {url} ads"
   //   Facebook  → "Fanpage - {pageName}" / "Fanpage - {pageName} - Ads"
-  const sourceName = buildSourceName(input.pageName, input.referral, isWebSource);
+  const sourceName = buildSourceName(input.pageName, input.referral, isWebSource, isWebSource ? input.pageUrl : undefined);
 
   let description: string;
   if (input.description) {
