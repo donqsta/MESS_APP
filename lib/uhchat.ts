@@ -50,7 +50,8 @@ export interface UhchatConversation {
 }
 
 export interface UhchatLead extends UhchatConversation {
-  phone?: string;
+  phone?: string;       // SĐT đầu tiên tìm thấy (backward-compat)
+  phones?: string[];    // Tất cả SĐT trong cuộc hội thoại
   getflysynced?: boolean;
   processedAt: Date;
   /** "chat" = từ trang Tin nhắn, "stats" = từ trang Thống kê (truy cập nhưng có thể không chat) */
@@ -563,16 +564,24 @@ export async function fetchAllNewChats(
           referrer: meta.referrer,
         });
 
-        // Nếu chưa có SĐT, thử extract lại
-        if (!existing.phone) {
-          const phones = await extractPhoneNumbers(fullVisitorText);
-          if (phones[0]) {
-            updateMessages(convo.sessionId, messages, { phone: phones[0] } as Partial<UhchatConversation>);
-            leads.push({ ...existing, messages, ...meta, phone: phones[0], lastMsgPreview: preview, processedAt: new Date() });
-          }
-        } else {
-          // Có SĐT rồi nhưng chưa Getfly → đưa vào leads để backfill có thể xử lý
-          leads.push({ ...existing, messages, ...meta, lastMsgPreview: preview, processedAt: new Date() });
+        // Thử extract tất cả SĐT (kể cả khi đã có phone trước đó — có thể có thêm SĐT mới)
+        const phones = await extractPhoneNumbers(fullVisitorText);
+        const allPhones = phones.length > 0 ? phones : (existing.phones ?? (existing.phone ? [existing.phone] : []));
+        const firstPhone = allPhones[0];
+        if (firstPhone || existing.phone) {
+          updateMessages(convo.sessionId, messages, {
+            phone: firstPhone ?? existing.phone,
+            phones: allPhones.length > 0 ? allPhones : undefined,
+          } as Partial<UhchatLead>);
+          leads.push({
+            ...existing,
+            messages,
+            ...meta,
+            phone: firstPhone ?? existing.phone,
+            phones: allPhones.length > 0 ? allPhones : existing.phones,
+            lastMsgPreview: preview,
+            processedAt: new Date(),
+          });
         }
         console.log(`[uhchat] Tin nhắn mới trong session ${convo.sessionId.slice(0, 8)}… (preview thay đổi)`);
         continue;
@@ -592,6 +601,7 @@ export async function fetchAllNewChats(
         ...meta,
         messages,
         phone: phones[0],
+        phones: phones.length > 0 ? phones : undefined,
         lastMsgPreview: convo.lastMsgPreview,
         getflysynced: false,
         processedAt: new Date(),

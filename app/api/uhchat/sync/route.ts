@@ -50,7 +50,12 @@ export async function POST(req: Request) {
   const processLead = async (lead: (typeof newLeads)[number]) => {
     addLead(lead);
 
-    if (!syncToGetfly || !lead.phone) return;
+    // Tập hợp tất cả SĐT: ưu tiên lead.phones, fallback về lead.phone
+    const allPhones = lead.phones?.length
+      ? lead.phones
+      : lead.phone ? [lead.phone] : [];
+
+    if (!syncToGetfly || allPhones.length === 0) return;
 
     const siteName = (() => {
       try {
@@ -92,32 +97,38 @@ export async function POST(req: Request) {
       ...fullConversation,
     ];
 
-    try {
-      const result = await createGetflyLead({
-        accountName: lead.visitorName ?? "",
-        phone: lead.phone,
-        pageName: siteName,
-        pageId: `web_uhchat`,
-        senderId: lead.phone,
-        messageText,
-        chatHistory,
-        pageUrl: lead.currentPage,
-        description: staticDescription,
-      });
+    // Tạo Getfly lead cho từng SĐT tìm thấy trong cuộc hội thoại
+    let allSynced = true;
+    for (const phone of allPhones) {
+      try {
+        const result = await createGetflyLead({
+          accountName: lead.visitorName ?? "",
+          phone,
+          pageName: siteName,
+          pageId: `web_uhchat`,
+          senderId: phone,
+          messageText,
+          chatHistory,
+          pageUrl: lead.currentPage,
+          description: staticDescription,
+        });
 
-      if (result.success) {
-        markGetflySynced(lead.sessionId);
-        getflySyncCount++;
-        console.log(`[uhchat/sync] Lead Getfly OK: phone=${lead.phone} source=${lead.source ?? "chat"}`);
-      } else if (result.duplicate) {
-        markGetflySynced(lead.sessionId);
-        console.log(`[uhchat/sync] Lead trùng SĐT: phone=${lead.phone}`);
-      } else {
-        console.warn(`[uhchat/sync] Getfly lỗi: ${result.error}`);
+        if (result.success) {
+          getflySyncCount++;
+          console.log(`[uhchat/sync] Lead Getfly OK: phone=${phone} source=${lead.source ?? "chat"}`);
+        } else if (result.duplicate) {
+          console.log(`[uhchat/sync] Lead trùng SĐT: phone=${phone}`);
+        } else {
+          console.warn(`[uhchat/sync] Getfly lỗi (phone=${phone}): ${result.error}`);
+          allSynced = false;
+        }
+      } catch (err) {
+        console.error(`[uhchat/sync] Getfly exception (phone=${phone}):`, err instanceof Error ? err.message : err);
+        allSynced = false;
       }
-    } catch (err) {
-      console.error("[uhchat/sync] Getfly exception:", err instanceof Error ? err.message : err);
     }
+
+    if (allSynced) markGetflySynced(lead.sessionId);
   };
 
   for (const lead of allNewLeads) {

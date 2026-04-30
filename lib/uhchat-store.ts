@@ -97,6 +97,7 @@ export function updateLeadMessages(
   lead.messages = messages;
   if (patch.lastMsgPreview !== undefined) lead.lastMsgPreview = patch.lastMsgPreview;
   if (patch.phone && !lead.phone) lead.phone = patch.phone;
+  if (patch.phones?.length) lead.phones = patch.phones;
   if (patch.currentPage) lead.currentPage = patch.currentPage;
   if (patch.referrer) lead.referrer = patch.referrer;
 }
