@@ -200,8 +200,18 @@ function CookieSetup({ onSaved }: { onSaved: () => void }) {
   const [tk, setTk] = useState("");
   const [showTk, setShowTk] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoLogging, setAutoLogging] = useState(false);
+  const [hasCredentials, setHasCredentials] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [expanded, setExpanded] = useState(true);
+
+  // Kiểm tra server có cấu hình email/password không
+  useEffect(() => {
+    fetch("/api/uhchat/auto-login")
+      .then((r) => r.json())
+      .then((d: { hasCredentials?: boolean }) => setHasCredentials(!!d.hasCredentials))
+      .catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!phpsessid.trim()) return;
@@ -227,6 +237,26 @@ function CookieSetup({ onSaved }: { onSaved: () => void }) {
       setStatus({ ok: false, msg: String(e) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const autoLogin = async () => {
+    setAutoLogging(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/uhchat/auto-login", { method: "POST" });
+      const data = await res.json() as { success?: boolean; message?: string; error?: string };
+      if (data.success) {
+        setStatus({ ok: true, msg: "Đăng nhập tự động thành công!" });
+        setExpanded(false);
+        onSaved();
+      } else {
+        setStatus({ ok: false, msg: data.error ?? "Đăng nhập thất bại" });
+      }
+    } catch (e) {
+      setStatus({ ok: false, msg: String(e) });
+    } finally {
+      setAutoLogging(false);
     }
   };
 
@@ -263,9 +293,42 @@ function CookieSetup({ onSaved }: { onSaved: () => void }) {
 
       {expanded && (
         <div className="px-3 pb-3 space-y-2.5">
-          {/* Hướng dẫn */}
+
+          {/* Tự động đăng nhập (nếu có cấu hình email/password) */}
+          {hasCredentials && (
+            <div className="bg-teal-50 border border-teal-200 rounded-lg p-2.5">
+              <p className="text-xs text-teal-700 font-medium mb-1.5 flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5" /> Tự động đăng nhập
+              </p>
+              <p className="text-xs text-teal-600 mb-2">
+                Server đã cấu hình email/password — nhấn bên dưới để tự động lấy cookie mới.
+              </p>
+              <button
+                onClick={autoLogin}
+                disabled={autoLogging}
+                className="w-full text-xs py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50 transition-colors font-medium flex items-center justify-center gap-1.5"
+              >
+                {autoLogging ? (
+                  <><RefreshCw className="w-3 h-3 animate-spin" /> Đang đăng nhập...</>
+                ) : (
+                  <><Zap className="w-3 h-3" /> Đăng nhập tự động</>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Divider */}
+          {hasCredentials && (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-amber-200" />
+              <span className="text-xs text-amber-400">hoặc nhập thủ công</span>
+              <div className="flex-1 h-px bg-amber-200" />
+            </div>
+          )}
+
+          {/* Hướng dẫn thủ công */}
           <div className="text-xs text-amber-700 space-y-1 pt-1">
-            <p className="font-medium">Lấy cookie:</p>
+            <p className="font-medium">Lấy cookie thủ công:</p>
             <ol className="list-decimal list-inside space-y-0.5 pl-1">
               <li>
                 Mở{" "}
@@ -359,11 +422,13 @@ export default function UhchatPanel() {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<SyncResult | null>(null);
   const [polling, setPolling] = useState(true);
-  const [syncToGetfly, setSyncToGetfly] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("uhchat_syncToGetfly") === "true";
-  });
+  const [syncToGetfly, setSyncToGetfly] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
+
+  // Đọc localStorage sau khi mount (tránh hydration mismatch server/client)
+  useEffect(() => {
+    setSyncToGetfly(localStorage.getItem("uhchat_syncToGetfly") === "true");
+  }, []);
   const [tab, setTab] = useState<"chat" | "stats">("chat");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

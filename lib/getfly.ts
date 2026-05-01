@@ -344,19 +344,30 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     },
   };
 
+  const doFetch = (body: Record<string, unknown>) =>
+    fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-KEY": GETFLY_API_KEY },
+      body: JSON.stringify(body),
+    });
+
+  const isSourceConflict = (errors: Record<string, unknown>) =>
+    !!(errors?.source_code || errors?.source_name);
+
   try {
     console.log("[Getfly] Tạo lead:", { phone: input.phone, project: projectIds, source: sourceName });
 
-    let res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-KEY": GETFLY_API_KEY,
-      },
-      body: JSON.stringify(payload),
-    });
-
+    let res = await doFetch(payload);
     let data = await res.json();
+
+    // Getfly báo nguồn đã tồn tại → retry không kèm account_source_names
+    if (!res.ok && isSourceConflict(data?.errors ?? {})) {
+      console.warn("[Getfly] Nguồn đã tồn tại, retry không kèm source name...");
+      const payloadNoSource = { ...payload };
+      delete payloadNoSource.account_source_names;
+      res = await doFetch(payloadNoSource);
+      data = await res.json();
+    }
 
     if (!res.ok || data.error) {
       const msg: string = data.message ?? data.error ?? "Lỗi không xác định";

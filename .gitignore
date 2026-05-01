@@ -30,6 +30,7 @@ npm-debug.log*
 
 # uhchat session (sensitive credential, auto-generated)
 data/uhchat-cookie.json
+data/uhchat-seen.json
 
 # vercel
 .vercel

@@ -4,7 +4,33 @@
  * giữa các module — tương tự webhook-store.ts.
  */
 
+import fs from "fs";
+import path from "path";
 import type { UhchatLead } from "@/lib/uhchat";
+
+// ── Persist seenIds ra file để sống sót qua server restart ───────────────────
+
+const SEEN_FILE = path.join(process.cwd(), "data", "uhchat-seen.json");
+
+function loadSeenFromFile(): Set<string> {
+  try {
+    if (!fs.existsSync(SEEN_FILE)) return new Set();
+    const arr = JSON.parse(fs.readFileSync(SEEN_FILE, "utf-8")) as string[];
+    return new Set(arr);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeenToFile(ids: Set<string>): void {
+  try {
+    // Giữ tối đa 5000 session ID gần nhất tránh file phình to
+    const arr = [...ids].slice(-5000);
+    fs.writeFileSync(SEEN_FILE, JSON.stringify(arr), "utf-8");
+  } catch (e) {
+    console.error("[uhchat-store] Không thể ghi seen file:", e);
+  }
+}
 
 // ── State storage trên process object ────────────────────────────────────────
 
@@ -22,7 +48,11 @@ function getLeads(): UhchatLead[] {
 
 function getSeenIds(): Set<string> {
   const p = process as unknown as Record<string, unknown>;
-  if (!p[_SEEN_KEY]) p[_SEEN_KEY] = new Set<string>();
+  if (!p[_SEEN_KEY]) {
+    // Lần đầu truy cập → load từ file (sau server restart)
+    p[_SEEN_KEY] = loadSeenFromFile();
+    console.log(`[uhchat-store] Loaded ${(p[_SEEN_KEY] as Set<string>).size} seen IDs từ file`);
+  }
   return p[_SEEN_KEY] as Set<string>;
 }
 
@@ -45,6 +75,7 @@ export function addLead(lead: UhchatLead): void {
 
   if (seen.has(lead.sessionId)) return; // đã xử lý
   seen.add(lead.sessionId);
+  saveSeenToFile(seen); // persist qua restart
 
   leads.unshift(lead); // mới nhất lên đầu
   if (leads.length > MAX_LEADS) leads.splice(MAX_LEADS);

@@ -139,11 +139,17 @@ export interface SenderProfile {
 
 /**
  * Lấy tên + avatar của người dùng — dùng cho phát hiện giới tính.
+ *
+ * Thử 3 cách theo thứ tự:
+ * 1. GET /{psid}?fields=name,picture  (cần pages_messaging permission)
+ * 2. GET /me/conversations?user_id={psid}&fields=participants  (lấy tên từ participant)
+ * 3. Trả về chuỗi rỗng (Getfly sẽ dùng SĐT làm tên)
  */
 export async function getSenderProfile(
   senderId: string,
   pageToken: string
 ): Promise<SenderProfile> {
+  // ── Cách 1: direct profile lookup ─────────────────────────────────────────
   try {
     const data = await fbFetch<{
       name?: string;
@@ -153,15 +159,42 @@ export async function getSenderProfile(
       fields: "name,picture.width(200).height(200)",
     });
 
-    const pic = data.picture?.data;
-    return {
-      name: data.name ?? "",
-      // Nếu là ảnh mặc định (silhouette) thì không dùng
-      pictureUrl: pic && !pic.is_silhouette ? pic.url : null,
-    };
-  } catch {
-    return { name: "", pictureUrl: null };
+    if (data.name) {
+      const pic = data.picture?.data;
+      return {
+        name: data.name,
+        pictureUrl: pic && !pic.is_silhouette ? pic.url : null,
+      };
+    }
+  } catch (err) {
+    console.warn("[Facebook] Profile lookup thất bại, thử conversation participants:", err instanceof Error ? err.message : err);
   }
+
+  // ── Cách 2: lấy tên từ danh sách participants của conversation ─────────────
+  try {
+    const convData = await fbFetch<{
+      data: Array<{
+        participants: { data: Array<{ id: string; name: string }> };
+      }>;
+    }>("/me/conversations", pageToken, {
+      user_id: senderId,
+      fields: "participants",
+      limit: "1",
+      platform: "MESSENGER",
+    });
+
+    const participant = convData.data?.[0]?.participants?.data?.find(
+      (p) => p.id === senderId
+    );
+    if (participant?.name) {
+      console.log(`[Facebook] Lấy tên từ conversation participants: ${participant.name}`);
+      return { name: participant.name, pictureUrl: null };
+    }
+  } catch (err) {
+    console.warn("[Facebook] Conversation participants thất bại:", err instanceof Error ? err.message : err);
+  }
+
+  return { name: "", pictureUrl: null };
 }
 
 // Cache comment đầu tiên theo post_id (tránh gọi API nhiều lần cho cùng bài đăng)

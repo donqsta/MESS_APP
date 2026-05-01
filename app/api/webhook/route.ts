@@ -5,7 +5,7 @@ import { recordAdLead, getAdLeadBySender } from "@/lib/ad-store";
 import { extractPhoneNumbers, createGetflyLead } from "@/lib/getfly";
 import { getPageFromEnv } from "@/lib/pages";
 import { handleBotMessage } from "@/lib/ai-bot/botHandler";
-import { getConversationIdBySender, getConversation } from "@/lib/ai-bot/botMemory";
+import { getConversationIdBySender, getConversation, registerSenderMapping, ensureConversation } from "@/lib/ai-bot/botMemory";
 import { getSenderProfile } from "@/lib/facebook";
 import { startProactiveChecker } from "@/lib/ai-bot/proactiveChecker";
 import { addLeadUserMessage, getLeadUserMessages } from "@/lib/lead-context-store";
@@ -105,16 +105,23 @@ export async function POST(req: NextRequest) {
 
           // Fetch tên thật của người gửi (ưu tiên từ botMemory nếu bot đã lấy trước đó)
           const resolveAndCreate = async () => {
-            // 1. Thử lấy từ botMemory (bot handler đã fetch profile khi nhắn tin đầu)
-            const resolvedConvId = getConversationIdBySender(pageId, senderId);
-            let displayName = resolvedConvId
-              ? (getConversation(resolvedConvId)?.profile.displayName ?? "")
-              : "";
+            // 1. Thử lấy từ botMemory — cả convId đã đăng ký lẫn synthetic convId
+            const syntheticConvId = `${pageId}_${senderId}`;
+            const registeredConvId = getConversationIdBySender(pageId, senderId);
+            let displayName =
+              (registeredConvId ? getConversation(registeredConvId)?.profile.displayName : undefined) ||
+              getConversation(syntheticConvId)?.profile.displayName ||
+              "";
 
-            // 2. Fallback: gọi Facebook API trực tiếp
+            // 2. Fallback: gọi Facebook Graph API (thử direct profile, sau đó conversation participants)
             if (!displayName && page?.accessToken) {
               const fbProfile = await getSenderProfile(senderId, page.accessToken);
               displayName = fbProfile.name;
+              // Cache tên vào botMemory để lần sau không cần gọi API nữa
+              if (displayName) {
+                registerSenderMapping(pageId, senderId, syntheticConvId);
+                ensureConversation(syntheticConvId, pageId, senderId, displayName);
+              }
             }
 
             // 3. Fallback cuối: để trống (Getfly sẽ hiển thị số điện thoại)

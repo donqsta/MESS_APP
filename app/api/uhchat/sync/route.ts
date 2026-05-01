@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     // Stats lead: không có hội thoại → dùng description cố định, bỏ qua AI
     const isStats = lead.source === "stats";
     const staticDescription = isStats
-      ? `Khách truy cập trang: ${lead.currentPage ?? siteName}`
+      ? `Khách truy cập trang: ${(() => { try { const u = new URL(lead.currentPage ?? ""); return u.origin; } catch { return siteName; } })()}`
       : undefined;
 
     const chatHistory = isStats ? undefined : [

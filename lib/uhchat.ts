@@ -21,7 +21,6 @@
  *   GET  https://uhchat.net/admin/detail.php?user=<sessionId>  → IP, thông tin thêm
  */
 
-import https from "https";
 import fs from "fs";
 import path from "path";
 import { extractPhoneNumbers } from "@/lib/getfly";
@@ -192,6 +191,25 @@ export async function loginUhchat(): Promise<string> {
   const password = process.env.UHCHAT_PASSWORD;
   if (!email || !password) throw new Error("UHCHAT_EMAIL / UHCHAT_PASSWORD chưa cấu hình");
 
+  const cookieMap = new Map<string, string>();
+
+  const BASE_HEADERS = {
+    "User-Agent": UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+  };
+
+  // ── Bước 0: GET trang login để lấy PHPSESSID ban đầu (giống browser) ──
+  const res0 = await fetch(`${BASE}/admin/`, {
+    headers: { ...BASE_HEADERS },
+    redirect: "follow",
+  });
+  const setCookies0 = (res0.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
+    ?? res0.headers.get("set-cookie")?.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_-]*=)/) ?? [];
+  mergeCookies(cookieMap, setCookies0);
+  console.log(`[uhchat] GET login page → HTTP ${res0.status} cookies=${setCookies0.length}`);
+
+  // ── Bước A: POST đăng nhập, không follow redirect để lấy cookie ──
   const formBody = new URLSearchParams({
     email,
     matkhau: password,
@@ -199,74 +217,68 @@ export async function loginUhchat(): Promise<string> {
     dangnhap: "Login",
   }).toString();
 
-  const cookie = await new Promise<string>((resolve, reject) => {
-    const options: import("https").RequestOptions = {
-      hostname: "uhchat.net",
-      path: "/admin/",
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": UA,
-        "Content-Length": Buffer.byteLength(formBody),
-      },
-    };
-
-    // ── Bước A: POST login → nhận PHPSESSID từ 302 ──
-    const req = https.request(options, (res302) => {
-      const cookies302: string[] = res302.headers["set-cookie"] ?? [];
-      const loc = res302.headers["location"] ?? "/admin/";
-      res302.resume();
-      res302.on("end", async () => {
-        console.log(`[uhchat] POST login → HTTP ${res302.statusCode} location=${loc} cookies=${cookies302.length}`);
-
-        // Tập hợp cookie sau bước A
-        const cookieMap = new Map<string, string>();
-        mergeCookies(cookieMap, cookies302);
-
-        const cookieAfterPost = cookiesToString(cookieMap);
-        if (!cookieAfterPost) {
-          reject(new Error("Đăng nhập uhchat thất bại: không có cookie sau POST"));
-          return;
-        }
-
-        // ── Bước B: GET trang redirect để nhận thêm cookies (đặc biệt tk token) ──
-        const redirectPath = loc.startsWith("http") ? new URL(loc).pathname + new URL(loc).search : loc;
-        const reqB = https.request(
-          { hostname: "uhchat.net", path: redirectPath, method: "GET",
-            headers: { "User-Agent": UA, Cookie: cookieAfterPost } },
-          (resB) => {
-            const cookiesB: string[] = resB.headers["set-cookie"] ?? [];
-            console.log(`[uhchat] GET redirect ${redirectPath} → HTTP ${resB.statusCode} cookies=${cookiesB.length}`);
-            mergeCookies(cookieMap, cookiesB);
-            resB.resume();
-            resB.on("end", () => {
-              const finalCookie = cookiesToString(cookieMap);
-              console.log("[uhchat] Final cookie:", finalCookie.slice(0, 120));
-              if (finalCookie) resolve(finalCookie);
-              else reject(new Error("Không nhận được cookie sau GET redirect"));
-            });
-          }
-        );
-        reqB.on("error", reject);
-        reqB.end();
-      });
-    });
-
-    req.on("error", reject);
-    req.write(formBody);
-    req.end();
+  const resA = await fetch(`${BASE}/admin/`, {
+    method: "POST",
+    headers: {
+      ...BASE_HEADERS,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Origin": BASE,
+      "Referer": `${BASE}/admin/`,
+      ...(cookiesToString(cookieMap) ? { Cookie: cookiesToString(cookieMap) } : {}),
+    },
+    body: formBody,
+    redirect: "manual",
   });
 
-  // ── Kiểm tra cookie có hoạt động không ──
-  const testHtml = await authedGetRaw(cookie, `${BASE}/admin/`);
-  const isLoggedIn = testHtml.includes('id="cachopthoai"') || testHtml.includes('class="khach"');
-  if (!isLoggedIn) {
-    throw new Error("Đăng nhập uhchat thất bại: cookie không hợp lệ (sai email/mật khẩu?)");
+  const setCookiesA = (resA.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
+    ?? resA.headers.get("set-cookie")?.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_-]*=)/) ?? [];
+  mergeCookies(cookieMap, setCookiesA);
+  const locationA = resA.headers.get("location") ?? "/admin/";
+  console.log(`[uhchat] POST login → HTTP ${resA.status} location=${locationA} cookies=${setCookiesA.length}`);
+
+  if (!cookiesToString(cookieMap)) {
+    throw new Error("Đăng nhập uhchat thất bại: không nhận được cookie từ POST (sai email/mật khẩu?)");
   }
 
-  _cache = { cookie, expiresAt: Date.now() + SESSION_TTL_MS };
-  console.log("[uhchat] Đăng nhập thành công, dashboard xác nhận");
-  return cookie;
+  // ── Bước B: GET trang redirect để nhận thêm cookies (tk token) ──
+  const redirectUrl = locationA.startsWith("http")
+    ? locationA
+    : `${BASE}${locationA.startsWith("/") ? "" : "/"}${locationA}`;
+
+  const resB = await fetch(redirectUrl, {
+    headers: { ...BASE_HEADERS, Cookie: cookiesToString(cookieMap) },
+    redirect: "manual",
+  });
+
+  const setCookiesB = (resB.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
+    ?? resB.headers.get("set-cookie")?.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_-]*=)/) ?? [];
+  mergeCookies(cookieMap, setCookiesB);
+  console.log(`[uhchat] GET redirect ${redirectUrl} → HTTP ${resB.status} cookies=${setCookiesB.length}`);
+
+  const finalCookie = cookiesToString(cookieMap);
+  if (!finalCookie) throw new Error("Không nhận được cookie sau GET redirect");
+  console.log("[uhchat] Final cookie:", finalCookie.slice(0, 120));
+
+  // ── Bước C: Verify — GET dashboard, không follow redirect, kiểm tra không còn trang login ──
+  const resC = await fetch(`${BASE}/admin/`, {
+    headers: { ...BASE_HEADERS, Cookie: finalCookie },
+    redirect: "follow",
+  });
+  const testHtml = await resC.text();
+  const stillOnLoginPage =
+    testHtml.includes('id="formdangnhap"') ||
+    testHtml.includes('name="dangnhap"') ||
+    testHtml.includes('name="matkhau"');
+
+  if (stillOnLoginPage) {
+    console.warn("[uhchat] Vẫn thấy trang login sau xác thực. HTML đầu:", testHtml.slice(0, 300));
+    throw new Error("Đăng nhập uhchat thất bại: sai email/mật khẩu hoặc tài khoản bị khóa");
+  }
+
+  _cache = { cookie: finalCookie, expiresAt: Date.now() + SESSION_TTL_MS };
+  saveCookieToFile(finalCookie); // persist để sống sót qua server restart
+  console.log("[uhchat] Đăng nhập thành công, cookie hợp lệ");
+  return finalCookie;
 }
 
 /** Raw GET không có session-expired check — dùng nội bộ trong loginUhchat */
@@ -309,10 +321,11 @@ async function authedGet(url: string, retry = true): Promise<string> {
   const cookie = await getCookie();
   const text = await authedGetRaw(cookie, url);
 
-  // Nếu nhận về trang login → session hết hạn, thử login lại 1 lần
+  // Nếu nhận về trang login → session hết hạn, xóa cache (kể cả manual) rồi thử lại
   if (text.includes('id="formdangnhap"') || text.includes('name="dangnhap"')) {
     console.warn("[uhchat] Session hết hạn, đang đăng nhập lại...");
-    invalidateSession();
+    invalidateSession(true); // force=true: xóa cả manual cookie để auto-login
+    saveCookieToFile(null);  // xóa file cookie cũ
     if (retry) return authedGet(url, false);
     throw new Error("Không thể xác thực với uhchat.net");
   }
