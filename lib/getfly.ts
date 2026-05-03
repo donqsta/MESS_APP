@@ -343,9 +343,8 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     description,
     custom_fields: {
       du_an_quan_tam: projectIds,
-      facebook_link: isWebSource
-        ? (input.pageUrl || "")
-        : `facebook.com/profile/${input.senderId}`,
+      // Chỉ Facebook Messenger — form / uhchat để trống (URL website đã ở nguồn/Ghi chú)
+      facebook_link: isWebSource ? "" : `facebook.com/profile/${input.senderId}`,
     },
   };
 
