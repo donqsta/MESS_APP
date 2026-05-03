@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createGetflyLead } from "@/lib/getfly";
+// distributeAfterCreate: phân bổ lead kích hoạt qua Getfly webhook (/api/getfly-webhook)
 
 // ── CORS headers cho phép cross-origin từ website WordPress ──────────────────
 const CORS = {
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest) {
 
   if (result.success) {
     console.log(`[FormLead] Lead created — site="${siteName}" phone=${phone}`);
+    // Phân bổ lead được kích hoạt qua Getfly webhook customer.created → /api/getfly-webhook
     return NextResponse.json({ success: true, accountId: result.accountId }, { headers: CORS });
   }
 

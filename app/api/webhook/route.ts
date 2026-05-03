@@ -9,6 +9,7 @@ import { getConversationIdBySender, getConversation, registerSenderMapping, ensu
 import { getSenderProfile } from "@/lib/facebook";
 import { startProactiveChecker } from "@/lib/ai-bot/proactiveChecker";
 import { addLeadUserMessage, getLeadUserMessages } from "@/lib/lead-context-store";
+// distributeAfterCreate: phân bổ lead kích hoạt qua Getfly webhook (/api/getfly-webhook)
 
 // Khởi động proactive checker một lần duy nhất (singleton qua process object)
 startProactiveChecker();
@@ -143,6 +144,7 @@ export async function POST(req: NextRequest) {
 
             if (result.success) {
               console.log(`[Getfly] Lead created — name="${displayName}" phone=${phones[0]} accountId=${result.accountId}`);
+              // Phân bổ lead được kích hoạt qua Getfly webhook customer.created → /api/getfly-webhook
             } else if (result.duplicate) {
               console.log(`[Getfly] Lead đã tồn tại (SĐT trùng) — phone=${phones[0]}`);
             } else {

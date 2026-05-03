@@ -32,6 +32,9 @@ npm-debug.log*
 data/uhchat-cookie.json
 data/uhchat-seen.json
 
+# zalo employee phone→id registry (sensitive)
+data/zalo-employee-registry.json
+
 # vercel
 .vercel
 

@@ -1,0 +1,240 @@
+{
+  "employees": [
+    {
+      "id": "getfly_1",
+      "name": "TNP HOLDINGS",
+      "getflyUserId": 1,
+      "zaloId": "",
+      "active": true,
+      "phone": "",
+      "position": "BAN GIÁM ĐỐC ĐIỀU HÀNH"
+    },
+    {
+      "id": "getfly_2",
+      "name": "Trương Ngọc Phú",
+      "getflyUserId": 2,
+      "zaloId": "",
+      "active": true,
+      "phone": "0906834039",
+      "position": "BAN GIÁM ĐỐC ĐIỀU HÀNH"
+    },
+    {
+      "id": "getfly_3",
+      "name": "Nguyễn Thị Bích Thủy",
+      "getflyUserId": 3,
+      "zaloId": "",
+      "active": true,
+      "phone": "0907363262",
+      "position": "PHÒNG KẾ TOÁN"
+    },
+    {
+      "id": "getfly_4",
+      "name": "Nguyễn Thị Lan Anh",
+      "getflyUserId": 4,
+      "zaloId": "",
+      "active": true,
+      "phone": "0945257587",
+      "position": "PHÒNG SALES ADMIN"
+    },
+    {
+      "id": "getfly_5",
+      "name": "Phạm Thị Ánh Hồng",
+      "getflyUserId": 5,
+      "zaloId": "",
+      "active": true,
+      "phone": "0934029768",
+      "position": "PHÒNG HÀNH CHÍNH - NHÂN SỰ"
+    },
+    {
+      "id": "getfly_6",
+      "name": "Nguyễn Thị Quỳnh Hoa",
+      "getflyUserId": 6,
+      "zaloId": "",
+      "active": true,
+      "phone": "0933885766",
+      "position": "PHÒNG KẾ TOÁN"
+    },
+    {
+      "id": "getfly_7",
+      "name": "Pham Amy",
+      "getflyUserId": 7,
+      "zaloId": "68e5fa77d035396b6024",
+      "active": true,
+      "phone": "0901594772",
+      "position": "PHÒNG MARKETING"
+    },
+    {
+      "id": "getfly_8",
+      "name": "Trương Hoàng Giang",
+      "getflyUserId": 8,
+      "zaloId": "",
+      "active": true,
+      "phone": "0935771643",
+      "position": "SÀN VFIRE"
+    },
+    {
+      "id": "getfly_9",
+      "name": "Nguyễn Tuấn Anh",
+      "getflyUserId": 9,
+      "zaloId": "",
+      "active": true,
+      "phone": "036095006506",
+      "position": "Phòng Kinh Doanh 1"
+    },
+    {
+      "id": "getfly_10",
+      "name": "Nguyễn Văn Hào",
+      "getflyUserId": 10,
+      "zaloId": "",
+      "active": true,
+      "phone": "0349377613",
+      "position": "Phòng Kinh Doanh 1"
+    },
+    {
+      "id": "getfly_11",
+      "name": "Võ Thị Ngọc Thủy",
+      "getflyUserId": 11,
+      "zaloId": "",
+      "active": true,
+      "phone": "0978261739",
+      "position": "Phòng Kinh Doanh 1"
+    },
+    {
+      "id": "getfly_12",
+      "name": "Vũ Thị Huyền Trang",
+      "getflyUserId": 12,
+      "zaloId": "",
+      "active": true,
+      "phone": "0934335009",
+      "position": "Phòng Kinh Doanh 1"
+    },
+    {
+      "id": "getfly_13",
+      "name": "Trần Minh Đức",
+      "getflyUserId": 13,
+      "zaloId": "",
+      "active": true,
+      "phone": "0945456436",
+      "position": "SÀN SPARTA"
+    },
+    {
+      "id": "getfly_14",
+      "name": "Phạm Ngọc Hiền",
+      "getflyUserId": 14,
+      "zaloId": "",
+      "active": true,
+      "phone": "0908520267",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_15",
+      "name": "Phạm Phương Nam",
+      "getflyUserId": 15,
+      "zaloId": "",
+      "active": true,
+      "phone": "0908520267",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_16",
+      "name": "Trương Ngọc Qúy",
+      "getflyUserId": 16,
+      "zaloId": "",
+      "active": true,
+      "phone": "0797100396",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_17",
+      "name": "Đỗ Thị An",
+      "getflyUserId": 17,
+      "zaloId": "",
+      "active": true,
+      "phone": "0933018846",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_18",
+      "name": "Trần Nguyễn Duy Phương",
+      "getflyUserId": 18,
+      "zaloId": "",
+      "active": true,
+      "phone": "0792346862",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_19",
+      "name": "Lê Thị Lệ Linh",
+      "getflyUserId": 19,
+      "zaloId": "",
+      "active": true,
+      "phone": "0979869143",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_20",
+      "name": "Lê Hùng Duy",
+      "getflyUserId": 20,
+      "zaloId": "",
+      "active": true,
+      "phone": "0832107068",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_21",
+      "name": "Trần Hoàng Thương",
+      "getflyUserId": 21,
+      "zaloId": "",
+      "active": true,
+      "phone": "0333791950",
+      "position": "Phòng Kinh Doanh 2"
+    },
+    {
+      "id": "getfly_22",
+      "name": "Đoàn Ngọc Minh",
+      "getflyUserId": 22,
+      "zaloId": "",
+      "active": true,
+      "phone": "0918037338",
+      "position": "SÀN PHOENIX"
+    },
+    {
+      "id": "getfly_23",
+      "name": "Nguyễn Duy Anh",
+      "getflyUserId": 23,
+      "zaloId": "",
+      "active": true,
+      "phone": "0933336242",
+      "position": "SÀN PHOENIX"
+    },
+    {
+      "id": "getfly_24",
+      "name": "Nguyễn Đình Trung",
+      "getflyUserId": 24,
+      "zaloId": "",
+      "active": true,
+      "phone": "0905009942",
+      "position": "SÀN PHOENIX"
+    },
+    {
+      "id": "getfly_26",
+      "name": "Tạ Ngọc Hoàng",
+      "getflyUserId": 26,
+      "zaloId": "",
+      "active": true,
+      "phone": "0784813777",
+      "position": "PHÒNG MARKETING"
+    },
+    {
+      "id": "getfly_27",
+      "name": "check test_tnp",
+      "getflyUserId": 27,
+      "zaloId": "beb33715ac45451b1c54",
+      "active": true,
+      "phone": "0778022023",
+      "position": "PHÒNG MARKETING"
+    }
+  ],
+  "projects": {},
+  "state": {}
+}

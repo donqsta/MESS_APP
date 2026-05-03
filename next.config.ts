@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 const nextConfig: NextConfig = {
   webpack: (config, { dev }) => {
@@ -7,7 +6,7 @@ const nextConfig: NextConfig = {
     if (dev) {
       config.watchOptions = {
         ...config.watchOptions,
-        ignored: [/node_modules/, /\.next/, path.resolve("data")],
+        ignored: ["**/node_modules/**", "**/.next/**", "**/data/**"],
       };
     }
     return config;

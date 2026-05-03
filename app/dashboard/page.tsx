@@ -2,7 +2,7 @@ import { getSession } from "@/lib/session";
 import { getPagesFromEnv } from "@/lib/pages";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { MessageSquare, Building2, LogOut, Settings, Globe } from "lucide-react";
+import { MessageSquare, Building2, LogOut, Settings, Globe, Users } from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -35,6 +35,13 @@ export default async function DashboardPage() {
           >
             <Globe className="w-4 h-4" />
             Website chat
+          </Link>
+          <Link
+            href="/distribution"
+            className="flex items-center gap-1.5 text-sm text-purple-300 hover:text-white transition-colors"
+          >
+            <Users className="w-4 h-4" />
+            Phân chia lead
           </Link>
           <form action="/api/auth/logout" method="POST">
             <button

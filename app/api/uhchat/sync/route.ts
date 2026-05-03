@@ -9,6 +9,7 @@ import {
   updateLeadMessages,
 } from "@/lib/uhchat-store";
 import { createGetflyLead } from "@/lib/getfly";
+// distributeAfterCreate: phân bổ lead kích hoạt qua Getfly webhook (/api/getfly-webhook)
 
 /**
  * POST /api/uhchat/sync
@@ -116,6 +117,7 @@ export async function POST(req: Request) {
         if (result.success) {
           getflySyncCount++;
           console.log(`[uhchat/sync] Lead Getfly OK: phone=${phone} source=${lead.source ?? "chat"}`);
+          // Phân bổ lead được kích hoạt qua Getfly webhook customer.created → /api/getfly-webhook
         } else if (result.duplicate) {
           console.log(`[uhchat/sync] Lead trùng SĐT: phone=${phone}`);
         } else {
