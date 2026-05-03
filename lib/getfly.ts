@@ -185,17 +185,19 @@ export function buildWebSourceName(siteName: string, hasAds: boolean): string {
 
 // ── Tạo khách hàng mới trên Getfly CRM ──────────────────────────────────────
 export interface GetflyLeadInput {
-  accountName: string;         // Tên Facebook hoặc tên khách từ form
-  phone: string;               // SĐT bắt được
-  pageName: string;            // Tên Fanpage hoặc tên website
-  pageId: string;              // ID Fanpage; bắt đầu "web" nếu từ web form
-  senderId: string;            // Facebook PSID hoặc phone (web form)
-  messageText: string;         // Tin nhắn / mô tả chứa SĐT
-  chatHistory?: string[];      // Lịch sử chat gần nhất để AI đọc nhu cầu
-  referral?: AdReferral;       // Dữ liệu quảng cáo (nếu có)
-  pageToken?: string;          // Page access token — dùng để đọc comment bài đăng
-  pageUrl?: string;            // URL trang web (web form) — dùng detect dự án từ domain
-  description?: string;        // Ghi chú cố định — bỏ qua AI khi được truyền
+  accountName: string;              // Tên Facebook hoặc tên khách từ form
+  phone: string;                    // SĐT bắt được
+  pageName: string;                 // Tên Fanpage hoặc tên website
+  pageId: string;                   // ID Fanpage; bắt đầu "web" nếu từ web form
+  senderId: string;                 // Facebook PSID hoặc phone (web form)
+  messageText: string;              // Tin nhắn / mô tả chứa SĐT
+  chatHistory?: string[];           // Lịch sử chat gần nhất để AI đọc nhu cầu
+  referral?: AdReferral;            // Dữ liệu quảng cáo (nếu có)
+  pageToken?: string;               // Page access token — dùng để đọc comment bài đăng
+  pageUrl?: string;                 // URL trang web (web form) — dùng detect dự án từ domain
+  description?: string;             // Ghi chú cố định — bỏ qua AI khi được truyền
+  assigneeGetflyUserId?: number;    // ID nhân viên Getfly được phân chia lead (từ distributor)
+  preDetectedProjectIds?: number[]; // Khi đã detect project bên ngoài — bỏ qua detect lại
 }
 
 export interface GetflyLeadResult {
@@ -303,8 +305,11 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
   // Detect dự án:
   //   Web form  → ưu tiên từ pageUrl (domain + AI), sau đó messageText
   //   Facebook  → từ messageText / referral / fanpage
+  //   Pre-detected → bỏ qua detect
   let projectIds: number[];
-  if (isWebSource && input.pageUrl) {
+  if (input.preDetectedProjectIds?.length) {
+    projectIds = input.preDetectedProjectIds;
+  } else if (isWebSource && input.pageUrl) {
     const fromUrl = await matchProject(input.pageUrl);
     if (fromUrl) {
       projectIds = [fromUrl];
@@ -344,12 +349,36 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     },
   };
 
+  if (input.assigneeGetflyUserId) {
+    payload.user_id = input.assigneeGetflyUserId;
+  }
+
   const doFetch = (body: Record<string, unknown>) =>
     fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-KEY": GETFLY_API_KEY },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
+
+  // Retry khi gặp lỗi network tạm thời (fetch failed / ECONNRESET)
+  const doFetchWithRetry = async (body: Record<string, unknown>) => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await doFetch(body);
+      } catch (err) {
+        const cause = (err as { cause?: { code?: string } })?.cause;
+        const isRetryable = !cause?.code || ["ECONNRESET", "ECONNREFUSED", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"].includes(cause.code);
+        if (attempt < 3 && isRetryable) {
+          console.warn(`[Getfly] Retry ${attempt}/3 — ${(err as Error).message} (${cause?.code ?? ""})`);
+          await new Promise(r => setTimeout(r, attempt * 1000));
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw new Error("Unreachable");
+  };
 
   const isSourceConflict = (errors: Record<string, unknown>) =>
     !!(errors?.source_code || errors?.source_name);
@@ -357,7 +386,7 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
   try {
     console.log("[Getfly] Tạo lead:", { phone: input.phone, project: projectIds, source: sourceName });
 
-    let res = await doFetch(payload);
+    let res = await doFetchWithRetry(payload);
     let data = await res.json();
 
     // Getfly báo nguồn đã tồn tại → retry không kèm account_source_names
@@ -365,7 +394,7 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
       console.warn("[Getfly] Nguồn đã tồn tại, retry không kèm source name...");
       const payloadNoSource = { ...payload };
       delete payloadNoSource.account_source_names;
-      res = await doFetch(payloadNoSource);
+      res = await doFetchWithRetry(payloadNoSource);
       data = await res.json();
     }
 
@@ -403,7 +432,8 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Lỗi kết nối Getfly";
-    console.error("[Getfly] Exception:", msg);
+    const cause = (err as { cause?: { message?: string; code?: string } })?.cause;
+    console.error("[Getfly] Exception:", msg, cause ? `| cause: ${cause.message ?? ""} code=${cause.code ?? ""}` : "");
     return { success: false, error: msg };
   }
 }
