@@ -1,3 +1,7 @@
+# local scripts
+ssh-run.js
+setup-ssh-key.js
+
 # dependencies
 /node_modules
 /.pnp
