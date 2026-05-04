@@ -156,10 +156,11 @@ export function markGetflySynced(sessionId: string): void {
 
 /** Kiểm tra sessionId đã được sync Getfly chưa — đọc từ file khi memory rỗng (sau restart) */
 export function isGetflySynced(sessionId: string): boolean {
-  // Ưu tiên memory (nhanh), fallback file (sau restart)
+  // File-based set là nguồn sự thật (migration seed chạy vào đây)
+  if (getGflySyncedIds().has(sessionId)) return true;
+  // Fallback: cờ in-memory (nhanh, đã được set bởi markGetflySynced)
   const lead = getLeads().find((l) => l.sessionId === sessionId);
-  if (lead) return !!lead.getflysynced;
-  return getGflySyncedIds().has(sessionId);
+  return !!lead?.getflysynced;
 }
 
 /** Set cờ đã đồng bộ Getfly theo số điện thoại (backup) */
@@ -193,7 +194,7 @@ export function updateLeadMessages(
 
 /** Trả về leads có SĐT nhưng chưa sync Getfly (để backfill khi bật toggle) */
 export function getUnsynedLeadsWithPhone(): UhchatLead[] {
-  return getLeads().filter((l) => l.phone && !l.getflysynced);
+  return getLeads().filter((l) => l.phone && !isGetflySynced(l.sessionId));
 }
 
 /** Trả về tập hợp sessionId đã xử lý (dùng để bỏ qua khi scrape) */

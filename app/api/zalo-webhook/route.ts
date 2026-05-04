@@ -126,10 +126,8 @@ async function handlePhoneRegistration(
     registerEmployee(phone, zaloId);
 
     const confirmMsg =
-      `✅ Đăng ký thành công!\n` +
-      `👤 ${getflyEmp.contact_name} (Getfly #${getflyEmp.user_id})\n` +
-      `📞 ${phone}\n` +
-      `Bạn sẽ nhận thông báo lead qua Zalo này.`;
+      `✅ Xác nhận thành công!\n` +
+      `${displayName} sẽ nhận được thông báo nhận lead qua zalo này nha.`;
 
     if (isGroup && groupId) {
       await sendZaloGroupMessage(groupId, `@${displayName} ${confirmMsg}`);
