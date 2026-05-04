@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { ChatMessage } from "./botMemory";
 
-const MODEL_NAME = "gemini-3.1-pro-preview";
+const MODEL_NAME = process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview";
 
 let client: GoogleGenerativeAI | null = null;
 

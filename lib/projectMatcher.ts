@@ -124,7 +124,7 @@ export async function matchByAI(text: string): Promise<number | null> {
 
   try {
     const model = gemini.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
+      model: (process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview"),
       generationConfig: { responseMimeType: "application/json", temperature: 0 },
     });
 
@@ -217,7 +217,7 @@ async function suggestKeywordsForProject(
 
   try {
     const model = gemini.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
+      model: (process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview"),
       generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
     });
     const result = await model.generateContent(prompt);

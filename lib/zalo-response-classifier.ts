@@ -54,7 +54,7 @@ async function classifyWithAI(text: string): Promise<ResponseIntent> {
 
   try {
     const model = geminiClient.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
+      model: (process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview"),
       generationConfig: { responseMimeType: "application/json", temperature: 0 },
     });
 

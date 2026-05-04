@@ -59,7 +59,7 @@ async function extractByAI(text: string): Promise<string[]> {
 
   try {
     const model = gemini.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
+      model: (process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview"),
       generationConfig: { responseMimeType: "application/json", temperature: 0 },
     });
 
@@ -323,7 +323,7 @@ async function summarizeLeadNeeds(input: GetflyLeadInput): Promise<LeadNeedSumma
 
   try {
     const model = gemini.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
+      model: (process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview"),
       generationConfig: { responseMimeType: "application/json", temperature: 0 },
     });
 

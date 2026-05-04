@@ -74,7 +74,7 @@ async function detectByGemini(
   if (!gemini) return "unknown";
 
   try {
-    const model = gemini.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
+    const model = gemini.getGenerativeModel({ model: (process.env.GOOGLE_AI_MODEL ?? "gemini-3-flash-preview") });
 
     const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
 
