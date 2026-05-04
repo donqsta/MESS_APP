@@ -17,7 +17,7 @@ import { getSession } from "@/lib/session";
 async function isAuthenticated(): Promise<boolean> {
   try {
     const session = await getSession();
-    return !!(session as Record<string, unknown>).username;
+    return !!session.isLoggedIn;
   } catch {
     return false;
   }
