@@ -32,6 +32,50 @@ function saveSeenToFile(ids: Set<string>): void {
   }
 }
 
+// ── Persist getfly-synced sessionIds ra file (sống sót qua deploy/restart) ───
+
+const GFLY_SYNCED_FILE = path.join(process.cwd(), "data", "uhchat-getfly-synced.json");
+const _GFLY_SYNCED_KEY = "__uhchat_getfly_synced_ids__";
+
+function loadGflySyncedFromFile(): Set<string> {
+  try {
+    if (fs.existsSync(GFLY_SYNCED_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(GFLY_SYNCED_FILE, "utf-8")) as string[];
+      return new Set(arr);
+    }
+    // File chưa tồn tại (lần đầu sau deploy mới) → seed từ uhchat-seen.json
+    // Mọi session đã seen trước đây được coi là "đã sync Getfly" → không sync lại
+    if (fs.existsSync(SEEN_FILE)) {
+      const seenArr = JSON.parse(fs.readFileSync(SEEN_FILE, "utf-8")) as string[];
+      const seeded = new Set(seenArr);
+      saveGflySyncedToFile(seeded);
+      console.log(`[uhchat-store] Migration: seeded ${seeded.size} IDs vào uhchat-getfly-synced.json từ seen file`);
+      return seeded;
+    }
+    return new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveGflySyncedToFile(ids: Set<string>): void {
+  try {
+    const arr = [...ids].slice(-5000);
+    fs.writeFileSync(GFLY_SYNCED_FILE, JSON.stringify(arr), "utf-8");
+  } catch (e) {
+    console.error("[uhchat-store] Không thể ghi getfly-synced file:", e);
+  }
+}
+
+function getGflySyncedIds(): Set<string> {
+  const p = process as unknown as Record<string, unknown>;
+  if (!p[_GFLY_SYNCED_KEY]) {
+    p[_GFLY_SYNCED_KEY] = loadGflySyncedFromFile();
+    console.log(`[uhchat-store] Loaded ${(p[_GFLY_SYNCED_KEY] as Set<string>).size} Getfly-synced IDs từ file`);
+  }
+  return p[_GFLY_SYNCED_KEY] as Set<string>;
+}
+
 // ── State storage trên process object ────────────────────────────────────────
 
 const _STORE_KEY = "__uhchat_store__";
@@ -97,11 +141,25 @@ export function getStoredLeads(): UhchatLead[] {
   return getLeads();
 }
 
-/** Set cờ đã đồng bộ Getfly cho một sessionId */
+/** Set cờ đã đồng bộ Getfly cho một sessionId — persist ra file để sống sót qua restart */
 export function markGetflySynced(sessionId: string): void {
+  // Cập nhật in-memory
   const leads = getLeads();
   const lead = leads.find((l) => l.sessionId === sessionId);
   if (lead) lead.getflysynced = true;
+
+  // Persist ra file
+  const synced = getGflySyncedIds();
+  synced.add(sessionId);
+  saveGflySyncedToFile(synced);
+}
+
+/** Kiểm tra sessionId đã được sync Getfly chưa — đọc từ file khi memory rỗng (sau restart) */
+export function isGetflySynced(sessionId: string): boolean {
+  // Ưu tiên memory (nhanh), fallback file (sau restart)
+  const lead = getLeads().find((l) => l.sessionId === sessionId);
+  if (lead) return !!lead.getflysynced;
+  return getGflySyncedIds().has(sessionId);
 }
 
 /** Set cờ đã đồng bộ Getfly theo số điện thoại (backup) */

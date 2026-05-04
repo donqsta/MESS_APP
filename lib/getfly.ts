@@ -1,4 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
 import { AdReferral } from "@/lib/webhook-store";
 import { getPostFirstComment } from "@/lib/facebook";
 import { matchProject, matchByKeyword, getProjectForPage } from "@/lib/projectMatcher";
@@ -213,6 +215,53 @@ function maskPhone(phone: string): string {
   return `${phone.slice(0, 3)}****${phone.slice(-3)}`;
 }
 
+// ── Hàng chờ lead thất bại ────────────────────────────────────────────────────
+const PENDING_FILE = join(process.cwd(), "data", "pending-leads.json");
+
+interface PendingLead {
+  id: string;
+  createdAt: string;
+  lastError: { status: number; message: string };
+  retryCount: number;
+  input: GetflyLeadInput;
+}
+
+function readPendingLeads(): PendingLead[] {
+  try {
+    return JSON.parse(readFileSync(PENDING_FILE, "utf-8")) as PendingLead[];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingLeads(leads: PendingLead[]): void {
+  mkdirSync(join(process.cwd(), "data"), { recursive: true });
+  writeFileSync(PENDING_FILE, JSON.stringify(leads, null, 2), "utf-8");
+}
+
+async function savePendingLead(
+  input: GetflyLeadInput,
+  lastError: { status: number; message: string }
+): Promise<void> {
+  try {
+    const leads = readPendingLeads();
+    leads.push({
+      id: `${Date.now()}-${input.phone}`,
+      createdAt: new Date().toISOString(),
+      lastError,
+      retryCount: 0,
+      input,
+    });
+    writePendingLeads(leads);
+    console.log("[Getfly] Đã lưu lead thất bại vào pending-leads.json:", maskPhone(input.phone));
+  } catch (e) {
+    console.error("[Getfly] Không thể ghi pending-leads.json:", e);
+  }
+}
+
+export { readPendingLeads, writePendingLeads };
+export type { PendingLead };
+
 
 interface LeadNeedSummary {
   productName?: string;
@@ -397,6 +446,18 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
       data = await res.json();
     }
 
+    // Attempt 3: payload tối thiểu khi 2 lần trên đều thất bại
+    if (!res.ok) {
+      console.warn("[Getfly] Retry lần 3 với payload tối thiểu...");
+      const payloadMinimal = {
+        account_name: input.accountName,
+        phone_office: input.phone,
+        relation_id: GETFLY_RELATION_ID_LEAD_MOI,
+      };
+      res = await doFetchWithRetry(payloadMinimal);
+      data = await res.json();
+    }
+
     if (!res.ok || data.error) {
       const msg: string = data.message ?? data.error ?? "Lỗi không xác định";
 
@@ -420,6 +481,10 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
           senderId: input.senderId,
         },
       });
+
+      // Backup: lưu vào hàng chờ để retry thủ công sau
+      await savePendingLead(input, { status: res.status, message: msg });
+
       return { success: false, error: msg, duplicate: isDuplicate };
     }
 

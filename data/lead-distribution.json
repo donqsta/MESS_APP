@@ -236,5 +236,10 @@
     }
   ],
   "projects": {},
-  "state": {}
+  "state": {
+    "1": {
+      "groupIndex": 0,
+      "groups": {}
+    }
+  }
 }

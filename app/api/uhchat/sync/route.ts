@@ -5,8 +5,10 @@ import {
   addLead,
   getSeenSessionIds,
   markGetflySynced,
+  isGetflySynced,
   getStoredLeadById,
   updateLeadMessages,
+  getUnsynedLeadsWithPhone,
 } from "@/lib/uhchat-store";
 import { createGetflyLead } from "@/lib/getfly";
 // distributeAfterCreate: phân bổ lead kích hoạt qua Getfly webhook (/api/getfly-webhook)
@@ -98,6 +100,12 @@ export async function POST(req: Request) {
       ...fullConversation,
     ];
 
+    // Bỏ qua nếu session này đã sync Getfly thành công (kiểm tra file persist — an toàn qua restart)
+    if (isGetflySynced(lead.sessionId)) {
+      console.log(`[uhchat/sync] Bỏ qua (đã sync): sessionId=${lead.sessionId.slice(0, 8)}…`);
+      return;
+    }
+
     // Tạo Getfly lead cho từng SĐT tìm thấy trong cuộc hội thoại
     let allSynced = true;
     for (const phone of allPhones) {
@@ -137,10 +145,26 @@ export async function POST(req: Request) {
     await processLead(lead);
   }
 
+  // Backfill: sync leads đã fetch trước khi bật Getfly toggle
+  // (addLead ghi seenIds trước khi check syncToGetfly → lead cũ bị bỏ qua vĩnh viễn)
+  let backfillCount = 0;
+  if (syncToGetfly) {
+    const processedIds = new Set(allNewLeads.map((l) => l.sessionId));
+    const unsynced = getUnsynedLeadsWithPhone().filter((l) => !processedIds.has(l.sessionId));
+    if (unsynced.length > 0) {
+      console.log(`[uhchat/sync] Backfill ${unsynced.length} leads chưa sync Getfly`);
+      for (const lead of unsynced) {
+        await processLead(lead);
+        backfillCount++;
+      }
+    }
+  }
+
   return NextResponse.json({
     newLeads: newLeads.length,
     newStats: statsLeads.length,
     getflySynced: getflySyncCount,
+    backfillSynced: backfillCount,
     syncToGetfly,
     timestamp: new Date().toISOString(),
   });
