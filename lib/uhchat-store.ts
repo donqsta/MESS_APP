@@ -169,7 +169,20 @@ export function addLead(lead: UhchatLead): void {
   const leads = getLeads();
   const seen = getSeenIds();
 
-  if (seen.has(lead.sessionId)) return; // đã xử lý
+  if (seen.has(lead.sessionId)) {
+    // Session đã seen — kiểm tra có đang ở trong memory chưa
+    const inMemory = leads.find((l) => l.sessionId === lead.sessionId);
+    if (!inMemory) {
+      // Chưa có trong memory (xảy ra sau restart) → khôi phục vào memory
+      // Không cần SSE, không ghi seenIds (đã có rồi)
+      leads.unshift(lead);
+      if (leads.length > MAX_LEADS) leads.splice(MAX_LEADS);
+      console.log(`[uhchat-store] Khôi phục vào memory sau restart: sessionId=${lead.sessionId} phone=${lead.phone ?? "(không có SĐT)"}`);
+    }
+    return;
+  }
+
+  // Session hoàn toàn mới
   seen.add(lead.sessionId);
   saveSeenToFile(seen); // persist qua restart
 

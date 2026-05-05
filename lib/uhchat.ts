@@ -489,6 +489,14 @@ function parseConversationDetail(html: string, sessionId: string): { messages: U
     const timeMatch = inner.match(/l[uú]c\s*([\d]{1,2}:[\d]{2})/i);
     const time = timeMatch?.[1];
 
+    // ── Lấy SĐT từ href="tel:..." trước khi strip HTML ──
+    // UChat bọc SĐT phát hiện trong <a href="tel:0xxx..."> — kể cả khi bị bọc span
+    const telPhones: string[] = [];
+    if (role === "khach") {
+      const telMatches = [...inner.matchAll(/href="tel:(0[3-9]\d{8})"/g)];
+      for (const tm of telMatches) telPhones.push(tm[1]);
+    }
+
     // ── Text nội dung ──
     let text = inner;
     // 1. Xóa avatar link: <a href="/admin/detail.php..."><img class="img"/></a>
@@ -501,6 +509,11 @@ function parseConversationDetail(html: string, sessionId: string): { messages: U
     text = text.replace(/<a[^>]*><img[^>]*><\/a>/g, "");
     // 5. Xóa còn lại
     text = decodeHtml(text);
+
+    // Nếu strip HTML đã loại mất SĐT (bị bọc span), bổ sung lại từ tel: hrefs
+    for (const tp of telPhones) {
+      if (!text.includes(tp)) text = `${text} ${tp}`.trim();
+    }
 
     if (text.length > 0) {
       messages.push({ from: role === "khach" ? "visitor" : "admin", text, time });
@@ -595,6 +608,12 @@ export async function fetchAllNewChats(
         const fallbackPhones = baseLead.phones ?? (baseLead.phone ? [baseLead.phone] : []);
         const allPhones = phones.length > 0 ? phones : fallbackPhones;
         const firstPhone = allPhones[0];
+        const reason = existing ? "preview thay đổi" : "khôi phục sau restart";
+        console.log(
+          `[uhchat] Session ${convo.sessionId.slice(0, 8)}… (${reason}) ` +
+          `preview="${preview}" phones=[${allPhones.join(",")}] ` +
+          `visitorLen=${fullVisitorText.length}`,
+        );
         if (firstPhone || baseLead.phone) {
           updateMessages(convo.sessionId, messages, {
             phone: firstPhone ?? baseLead.phone,
@@ -610,8 +629,6 @@ export async function fetchAllNewChats(
             processedAt: new Date(),
           });
         }
-        const reason = existing ? "preview thay đổi" : "khôi phục sau restart";
-        console.log(`[uhchat] Tin nhắn mới trong session ${convo.sessionId.slice(0, 8)}… (${reason})`);
         continue;
       }
 
