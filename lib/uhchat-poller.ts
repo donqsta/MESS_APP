@@ -4,6 +4,8 @@
  * Khởi động một lần từ app/api/uhchat/sync/route.ts khi app boot.
  */
 
+import fs from "fs";
+import path from "path";
 import { fetchAllNewChats, getStatsVisitors } from "@/lib/uhchat";
 import {
   addLead,
@@ -18,6 +20,7 @@ import { createGetflyLead } from "@/lib/getfly";
 
 const POLL_INTERVAL_MS = parseInt(process.env.UHCHAT_POLL_INTERVAL_MS ?? "30000", 10);
 const _POLLER_KEY = "__uhchat_poller_started__";
+const GFLY_SYNCED_FILE = path.join(process.cwd(), "data", "uhchat-getfly-synced.json");
 
 export function startUhchatPoller(): void {
   const p = process as unknown as Record<string, unknown>;
@@ -26,12 +29,24 @@ export function startUhchatPoller(): void {
   console.log(`[uhchat-poller] Server-side polling bắt đầu — interval: ${POLL_INTERVAL_MS / 1000}s`);
 
   // Chạy ngay lần đầu sau 5s (cho app boot xong)
-  setTimeout(() => runPoll().catch(console.error), 5000);
+  setTimeout(() => runPoll(true).catch(console.error), 5000);
 
-  setInterval(() => runPoll().catch(console.error), POLL_INTERVAL_MS);
+  setInterval(() => runPoll(false).catch(console.error), POLL_INTERVAL_MS);
 }
 
-async function runPoll(): Promise<void> {
+/**
+ * Lần đầu sau deploy mà file synced không tồn tại → seed mode.
+ * Lấy tất cả lead hiện tại, mark "đã synced" mà KHÔNG sync Getfly.
+ * Mục đích: tránh sync hàng loạt lead cũ khi data/ bị wipe (như webhook chỉ xử lý event mới).
+ */
+async function runPoll(isFirstPoll: boolean): Promise<void> {
+  // Nếu là lần đầu chạy + synced file chưa tồn tại → SEED MODE
+  const isFreshDeploy = isFirstPoll && !fs.existsSync(GFLY_SYNCED_FILE);
+  if (isFreshDeploy) {
+    await seedInitialState();
+    return;
+  }
+
   const syncToGetfly = process.env.UHCHAT_SYNC_TO_GETFLY === "true";
   const seenIds = getSeenSessionIds();
 
@@ -70,6 +85,32 @@ async function runPoll(): Promise<void> {
   if (allNewLeads.length > 0 || syncCount > 0) {
     console.log(`[uhchat-poller] Kết quả: newLeads=${allNewLeads.length} getflySynced=${syncCount}`);
   }
+}
+
+/**
+ * Seed mode: gọi 1 lần khi fresh deploy (data/ trống).
+ * Fetch tất cả lead đang có trên uhchat → mark "đã synced" mà không gửi Getfly.
+ * Sau lần này, chỉ lead MỚI xuất hiện sau seed mới được sync.
+ */
+async function seedInitialState(): Promise<void> {
+  console.log("[uhchat-poller] FRESH DEPLOY phát hiện — chạy SEED MODE (không sync Getfly)");
+  const seenIds = getSeenSessionIds();
+
+  const newLeads = await fetchAllNewChats(seenIds, getStoredLeadById, updateLeadMessages).catch((err) => {
+    console.error("[uhchat-poller] Seed: lỗi fetchAllNewChats:", err instanceof Error ? err.message : err);
+    return [];
+  });
+  const statsLeads = await getStatsVisitors(seenIds).catch((err) => {
+    console.warn("[uhchat-poller] Seed: lỗi getStatsVisitors:", err instanceof Error ? err.message : err);
+    return [] as typeof newLeads;
+  });
+
+  const all = [...newLeads, ...statsLeads];
+  for (const lead of all) {
+    addLead(lead);
+    markGetflySynced(lead.sessionId);
+  }
+  console.log(`[uhchat-poller] SEED hoàn tất: ${all.length} leads (${newLeads.length} chat + ${statsLeads.length} stats) đã đánh dấu synced. KHÔNG gửi sang Getfly.`);
 }
 
 type Lead = Awaited<ReturnType<typeof fetchAllNewChats>>[number];
