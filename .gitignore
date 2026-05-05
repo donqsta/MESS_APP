@@ -36,6 +36,7 @@ npm-debug.log*
 data/uhchat-cookie.json
 data/uhchat-seen.json
 data/uhchat-getfly-synced.json
+data/uhchat-getfly-phone-synced.json
 
 # zalo employee phone→id registry (sensitive)
 data/zalo-employee-registry.json

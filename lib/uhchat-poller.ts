@@ -12,6 +12,8 @@ import {
   getSeenSessionIds,
   markGetflySynced,
   isGetflySynced,
+  markPhoneSynced,
+  isPhoneSynced,
   getStoredLeadById,
   updateLeadMessages,
   getUnsynedLeadsWithPhone,
@@ -106,11 +108,18 @@ async function seedInitialState(): Promise<void> {
   });
 
   const all = [...newLeads, ...statsLeads];
+  let totalPhones = 0;
   for (const lead of all) {
     addLead(lead);
     markGetflySynced(lead.sessionId);
+    // Mark từng SĐT của session để dedup theo phone-level về sau
+    const phones = lead.phones?.length ? lead.phones : (lead.phone ? [lead.phone] : []);
+    for (const phone of phones) {
+      markPhoneSynced(lead.sessionId, phone);
+      totalPhones++;
+    }
   }
-  console.log(`[uhchat-poller] SEED hoàn tất: ${all.length} leads (${newLeads.length} chat + ${statsLeads.length} stats) đã đánh dấu synced. KHÔNG gửi sang Getfly.`);
+  console.log(`[uhchat-poller] SEED hoàn tất: ${all.length} leads + ${totalPhones} SĐT (${newLeads.length} chat + ${statsLeads.length} stats) đã đánh dấu synced. KHÔNG gửi sang Getfly.`);
 }
 
 type Lead = Awaited<ReturnType<typeof fetchAllNewChats>>[number];
@@ -122,14 +131,24 @@ async function processLead(
 ): Promise<void> {
   addLead(lead);
 
-  const allPhones = lead.phones?.length
+  const allPhonesRaw = lead.phones?.length
     ? lead.phones
     : lead.phone ? [lead.phone] : [];
 
-  if (!syncToGetfly || allPhones.length === 0) return;
+  if (!syncToGetfly || allPhonesRaw.length === 0) return;
 
-  if (isGetflySynced(lead.sessionId)) {
-    console.log(`[uhchat-poller] Bỏ qua (đã sync): sessionId=${lead.sessionId.slice(0, 8)}…`);
+  // Dedup theo từng SĐT — cho phép cùng session sync nhiều SĐT khác nhau
+  const allPhones = allPhonesRaw.filter((p) => {
+    if (isPhoneSynced(lead.sessionId, p)) {
+      console.log(`[uhchat-poller] Bỏ qua SĐT đã sync: sessionId=${lead.sessionId.slice(0, 8)}… phone=${p}`);
+      return false;
+    }
+    return true;
+  });
+
+  if (allPhones.length === 0) {
+    // Tất cả SĐT trong session này đã sync rồi
+    if (!isGetflySynced(lead.sessionId)) markGetflySynced(lead.sessionId);
     return;
   }
 
@@ -181,8 +200,11 @@ async function processLead(
 
       if (result.success) {
         onSynced(1);
+        markPhoneSynced(lead.sessionId, phone);
         console.log(`[uhchat-poller] Lead Getfly OK: phone=${phone} source=${lead.source ?? "chat"}`);
       } else if (result.duplicate) {
+        // SĐT đã có ở Getfly từ nguồn khác — vẫn coi như sync xong cặp này
+        markPhoneSynced(lead.sessionId, phone);
         console.log(`[uhchat-poller] Lead trùng SĐT: phone=${phone}`);
       } else {
         console.warn(`[uhchat-poller] Getfly lỗi (phone=${phone}): ${result.error}`);

@@ -76,6 +76,58 @@ function getGflySyncedIds(): Set<string> {
   return p[_GFLY_SYNCED_KEY] as Set<string>;
 }
 
+// ── Persist từng cặp (sessionId, phone) đã sync ──────────────────────────────
+// Cho phép cùng session sync nhiều SĐT khác nhau, nhưng không sync lại SĐT đã có
+
+const GFLY_PHONE_SYNCED_FILE = path.join(process.cwd(), "data", "uhchat-getfly-phone-synced.json");
+const _GFLY_PHONE_SYNCED_KEY = "__uhchat_getfly_phone_synced__";
+
+function loadPhoneSyncedFromFile(): Set<string> {
+  try {
+    if (fs.existsSync(GFLY_PHONE_SYNCED_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(GFLY_PHONE_SYNCED_FILE, "utf-8")) as string[];
+      return new Set(arr);
+    }
+    return new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function savePhoneSyncedToFile(ids: Set<string>): void {
+  try {
+    const arr = [...ids].slice(-10000);
+    fs.writeFileSync(GFLY_PHONE_SYNCED_FILE, JSON.stringify(arr), "utf-8");
+  } catch (e) {
+    console.error("[uhchat-store] Không thể ghi phone-synced file:", e);
+  }
+}
+
+function getPhoneSyncedSet(): Set<string> {
+  const p = process as unknown as Record<string, unknown>;
+  if (!p[_GFLY_PHONE_SYNCED_KEY]) {
+    p[_GFLY_PHONE_SYNCED_KEY] = loadPhoneSyncedFromFile();
+    console.log(`[uhchat-store] Loaded ${(p[_GFLY_PHONE_SYNCED_KEY] as Set<string>).size} phone-synced cặp từ file`);
+  }
+  return p[_GFLY_PHONE_SYNCED_KEY] as Set<string>;
+}
+
+function phoneKey(sessionId: string, phone: string): string {
+  return `${sessionId}:${phone}`;
+}
+
+/** Đánh dấu một (sessionId, phone) cụ thể đã sync Getfly */
+export function markPhoneSynced(sessionId: string, phone: string): void {
+  const set = getPhoneSyncedSet();
+  set.add(phoneKey(sessionId, phone));
+  savePhoneSyncedToFile(set);
+}
+
+/** Kiểm tra (sessionId, phone) đã sync chưa */
+export function isPhoneSynced(sessionId: string, phone: string): boolean {
+  return getPhoneSyncedSet().has(phoneKey(sessionId, phone));
+}
+
 // ── State storage trên process object ────────────────────────────────────────
 
 const _STORE_KEY = "__uhchat_store__";

@@ -10,6 +10,8 @@ import {
   getSeenSessionIds,
   markGetflySynced,
   isGetflySynced,
+  markPhoneSynced,
+  isPhoneSynced,
   getStoredLeadById,
   updateLeadMessages,
   getUnsynedLeadsWithPhone,
@@ -58,11 +60,25 @@ export async function POST(req: Request) {
     addLead(lead);
 
     // Tập hợp tất cả SĐT: ưu tiên lead.phones, fallback về lead.phone
-    const allPhones = lead.phones?.length
+    const allPhonesRaw = lead.phones?.length
       ? lead.phones
       : lead.phone ? [lead.phone] : [];
 
-    if (!syncToGetfly || allPhones.length === 0) return;
+    if (!syncToGetfly || allPhonesRaw.length === 0) return;
+
+    // Dedup theo phone-level — cùng session vẫn sync được SĐT mới
+    const allPhones = allPhonesRaw.filter((p) => {
+      if (isPhoneSynced(lead.sessionId, p)) {
+        console.log(`[uhchat/sync] Bỏ qua SĐT đã sync: sessionId=${lead.sessionId.slice(0, 8)}… phone=${p}`);
+        return false;
+      }
+      return true;
+    });
+
+    if (allPhones.length === 0) {
+      if (!isGetflySynced(lead.sessionId)) markGetflySynced(lead.sessionId);
+      return;
+    }
 
     const siteName = (() => {
       try {
@@ -104,12 +120,6 @@ export async function POST(req: Request) {
       ...fullConversation,
     ];
 
-    // Bỏ qua nếu session này đã sync Getfly thành công (kiểm tra file persist — an toàn qua restart)
-    if (isGetflySynced(lead.sessionId)) {
-      console.log(`[uhchat/sync] Bỏ qua (đã sync): sessionId=${lead.sessionId.slice(0, 8)}…`);
-      return;
-    }
-
     // Tạo Getfly lead cho từng SĐT tìm thấy trong cuộc hội thoại
     let allSynced = true;
     for (const phone of allPhones) {
@@ -128,9 +138,11 @@ export async function POST(req: Request) {
 
         if (result.success) {
           getflySyncCount++;
+          markPhoneSynced(lead.sessionId, phone);
           console.log(`[uhchat/sync] Lead Getfly OK: phone=${phone} source=${lead.source ?? "chat"}`);
           // Phân bổ lead được kích hoạt qua Getfly webhook customer.created → /api/getfly-webhook
         } else if (result.duplicate) {
+          markPhoneSynced(lead.sessionId, phone);
           console.log(`[uhchat/sync] Lead trùng SĐT: phone=${phone}`);
         } else {
           console.warn(`[uhchat/sync] Getfly lỗi (phone=${phone}): ${result.error}`);

@@ -30,32 +30,53 @@ interface ProjectConfig {
 
 // ── Load & cache config ───────────────────────────────────────────────────────
 
+// Path chính (data/) để ghi/persist khi sync hoặc edit qua API
 const CONFIG_PATH = path.join(process.cwd(), "data", "projects.json");
+// Path fallback (config/) đi kèm image — sống sót khi data/ bị volume override
+const CONFIG_FALLBACK_PATH = path.join(process.cwd(), "config", "projects.json");
 
 // Singleton cache trên process object để hot-reload an toàn
 declare global {
   // eslint-disable-next-line no-var
-  var __projectConfig: { data: ProjectConfig; mtime: number } | undefined;
+  var __projectConfig: { data: ProjectConfig; mtime: number; source: string } | undefined;
+}
+
+function resolveReadPath(): string | null {
+  if (fs.existsSync(CONFIG_PATH)) return CONFIG_PATH;
+  if (fs.existsSync(CONFIG_FALLBACK_PATH)) return CONFIG_FALLBACK_PATH;
+  return null;
 }
 
 function loadConfig(): ProjectConfig {
+  const readPath = resolveReadPath();
+  if (!readPath) {
+    console.error("[ProjectMatcher] Không tìm thấy projects.json ở data/ hoặc config/");
+    return { fallbackId: 41, projects: [] };
+  }
   try {
-    const stat = fs.statSync(CONFIG_PATH);
+    const stat = fs.statSync(readPath);
     const mtime = stat.mtimeMs;
 
-    if (global.__projectConfig && global.__projectConfig.mtime === mtime) {
+    if (global.__projectConfig && global.__projectConfig.mtime === mtime && global.__projectConfig.source === readPath) {
       return global.__projectConfig.data;
     }
 
-    const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+    const raw = fs.readFileSync(readPath, "utf-8");
     const data = JSON.parse(raw) as ProjectConfig;
-    global.__projectConfig = { data, mtime };
-    console.log("[ProjectMatcher] Loaded projects.json:", data.projects.length, "projects");
+    global.__projectConfig = { data, mtime, source: readPath };
+    console.log(`[ProjectMatcher] Loaded projects.json (${data.projects.length} projects) từ ${readPath === CONFIG_PATH ? "data/" : "config/ (fallback)"}`);
     return data;
   } catch (err) {
     console.error("[ProjectMatcher] Lỗi đọc projects.json:", err);
     return { fallbackId: 41, projects: [] };
   }
+}
+
+function writeConfig(config: ProjectConfig): void {
+  // Đảm bảo thư mục data/ tồn tại trước khi ghi (volume mount có thể trống)
+  const dataDir = path.dirname(CONFIG_PATH);
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
 }
 
 export function getProjects(): ProjectEntry[] {
@@ -171,7 +192,7 @@ export function updateProject(
   if (patch.domains  !== undefined) project.domains  = patch.domains;
   if (patch.pageIds  !== undefined) project.pageIds  = patch.pageIds;
 
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  writeConfig(config);
   global.__projectConfig = undefined; // reset cache
   console.log(`[ProjectMatcher] Updated project ID ${id}:`, patch);
 }
@@ -307,7 +328,7 @@ export async function syncProjectsFromGetfly(
 
   // Ghi lại file nếu có thay đổi
   if (added.length > 0 || updated.length > 0 || filled.length > 0) {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+    writeConfig(config);
     global.__projectConfig = undefined;
     console.log("[ProjectMatcher] Sync xong. Added:", added.length, "Updated:", updated.length, "Filled:", filled.length);
   }
