@@ -556,21 +556,34 @@ export async function fetchAllNewChats(
     try {
       const existing = getLeadById(convo.sessionId);
 
-      if (existing) {
-        // Session đã biết — chỉ re-fetch nếu lastMsgPreview thay đổi
-        const preview = convo.lastMsgPreview?.trim() ?? "";
-        const storedPreview = existing.lastMsgPreview?.trim() ?? "";
-        if (preview && preview === storedPreview) continue; // không có gì mới
-        if (!preview) continue; // không có preview thì bỏ qua
+      // Session đã biết (in-memory) HOẶC đã seen trên file (sống sót qua restart)
+      // → re-check để bắt tin nhắn / SĐT mới
+      const isKnownSession = !!existing || seenIds.has(convo.sessionId);
 
-        // Có tin nhắn mới → fetch lại
+      if (isKnownSession) {
+        const preview = convo.lastMsgPreview?.trim() ?? "";
+        const storedPreview = existing?.lastMsgPreview?.trim() ?? "";
+
+        // Nếu có lead in-memory với preview giống dashboard → bỏ qua (không có gì mới)
+        if (existing && preview && preview === storedPreview) continue;
+        if (!preview) continue;
+
+        // Có tin nhắn mới HOẶC chưa có lead in-memory (sau restart) → fetch lại
         const { messages, meta } = await getMessages(convo.sessionId);
         const fullVisitorText = messages
           .filter((m) => m.from === "visitor")
           .map((m) => m.text)
           .join(" ");
 
-        // Cập nhật messages trong store tại chỗ
+        // Nếu chưa có lead trong memory (do restart), tạo skeleton từ convo
+        const baseLead: UhchatLead = existing ?? {
+          ...convo,
+          ...meta,
+          messages: [],
+          getflysynced: false,
+        };
+
+        // Cập nhật messages trong store tại chỗ (auto-create nếu chưa có)
         updateMessages(convo.sessionId, messages, {
           lastMsgPreview: preview,
           currentPage: meta.currentPage,
@@ -579,24 +592,26 @@ export async function fetchAllNewChats(
 
         // Thử extract tất cả SĐT (kể cả khi đã có phone trước đó — có thể có thêm SĐT mới)
         const phones = await extractPhoneNumbers(fullVisitorText);
-        const allPhones = phones.length > 0 ? phones : (existing.phones ?? (existing.phone ? [existing.phone] : []));
+        const fallbackPhones = baseLead.phones ?? (baseLead.phone ? [baseLead.phone] : []);
+        const allPhones = phones.length > 0 ? phones : fallbackPhones;
         const firstPhone = allPhones[0];
-        if (firstPhone || existing.phone) {
+        if (firstPhone || baseLead.phone) {
           updateMessages(convo.sessionId, messages, {
-            phone: firstPhone ?? existing.phone,
+            phone: firstPhone ?? baseLead.phone,
             phones: allPhones.length > 0 ? allPhones : undefined,
           } as Partial<UhchatLead>);
           leads.push({
-            ...existing,
+            ...baseLead,
             messages,
             ...meta,
-            phone: firstPhone ?? existing.phone,
-            phones: allPhones.length > 0 ? allPhones : existing.phones,
+            phone: firstPhone ?? baseLead.phone,
+            phones: allPhones.length > 0 ? allPhones : baseLead.phones,
             lastMsgPreview: preview,
             processedAt: new Date(),
           });
         }
-        console.log(`[uhchat] Tin nhắn mới trong session ${convo.sessionId.slice(0, 8)}… (preview thay đổi)`);
+        const reason = existing ? "preview thay đổi" : "khôi phục sau restart";
+        console.log(`[uhchat] Tin nhắn mới trong session ${convo.sessionId.slice(0, 8)}… (${reason})`);
         continue;
       }
 

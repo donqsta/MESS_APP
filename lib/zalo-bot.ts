@@ -12,8 +12,9 @@
 import { Employee } from "./lead-distributor";
 import { classifyEmployeeResponse } from "./zalo-response-classifier";
 
-const ZALO_BOT_TOKEN = process.env.ZALO_BOT_TOKEN ?? "";
-const ZALO_BOT_SECRET = process.env.ZALO_BOT_SECRET ?? "";
+// Đọc env mỗi lần gọi để tránh cache stale value qua build/deploy
+function getZaloToken(): string { return process.env.ZALO_BOT_TOKEN ?? ""; }
+function getZaloSecret(): string { return process.env.ZALO_BOT_SECRET ?? ""; }
 // Bot Platform API: https://bot-api.zaloplatforms.com/bot{TOKEN}/{method}
 // Token nhúng trong URL, không phải header
 
@@ -27,22 +28,31 @@ const pendingReplies = new Map<string, {
 // ── Signature verification ─────────────────────────────────────────────────────
 // Zalo Bot Platform: header X-Bot-Api-Secret-Token = plain text secret (không phải HMAC)
 
-export function verifyZaloSignature(rawBody: string, signature: string): boolean {
-  if (!ZALO_BOT_SECRET) return true;
-  return signature === ZALO_BOT_SECRET;
+export function verifyZaloSignature(_rawBody: string, signature: string): boolean {
+  const secret = getZaloSecret();
+  if (!secret) {
+    console.warn("[zalo-bot] ZALO_BOT_SECRET trống — bỏ qua verify (không an toàn)");
+    return true;
+  }
+  const ok = signature === secret;
+  if (!ok) {
+    console.warn(`[zalo-bot] verify FAIL — sig_len=${signature.length} secret_len=${secret.length} sig_first8="${signature.slice(0, 8)}" secret_first8="${secret.slice(0, 8)}"`);
+  }
+  return ok;
 }
 
 // ── Send message ───────────────────────────────────────────────────────────────
 
 export async function sendZaloMessage(zaloId: string, text: string): Promise<boolean> {
-  if (!ZALO_BOT_TOKEN) {
+  const token = getZaloToken();
+  if (!token) {
     console.warn("[zalo-bot] Chưa cấu hình ZALO_BOT_TOKEN");
     return false;
   }
 
   try {
     // Zalo Bot Platform API: token nhúng trong URL path
-    const url = `https://bot-api.zaloplatforms.com/bot${ZALO_BOT_TOKEN}/sendMessage`;
+    const url = `https://bot-api.zaloplatforms.com/bot${token}/sendMessage`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
