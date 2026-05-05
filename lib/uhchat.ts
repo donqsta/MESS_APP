@@ -594,6 +594,7 @@ export async function fetchAllNewChats(
           ...meta,
           messages: [],
           getflysynced: false,
+          processedAt: new Date(),
         };
 
         // Cập nhật messages trong store tại chỗ (auto-create nếu chưa có)
