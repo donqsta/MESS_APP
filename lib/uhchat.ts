@@ -629,6 +629,16 @@ export async function fetchAllNewChats(
             lastMsgPreview: preview,
             processedAt: new Date(),
           });
+        } else if (!existing) {
+          // Restored after restart — no phone found, but still push to memory so next poll
+          // can compare preview and skip without re-fetching / calling Gemini again.
+          leads.push({
+            ...baseLead,
+            messages,
+            ...meta,
+            lastMsgPreview: preview,
+            processedAt: new Date(),
+          });
         }
         continue;
       }
