@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { startUhchatPoller } from "@/lib/uhchat-poller";
+
+// Khởi động server-side poller một lần duy nhất khi module được load
+startUhchatPoller();
 import { fetchAllNewChats, getStatsVisitors, invalidateSession } from "@/lib/uhchat";
 import {
   addLead,

@@ -44,8 +44,11 @@ export async function POST(req: NextRequest) {
     // Zalo Bot Platform: plain text secret trong header X-Bot-Api-Secret-Token
     const signature = req.headers.get("x-bot-api-secret-token") ?? "";
 
+    // Debug: log khi nhận request (giúp xác nhận Coolify forward đúng)
+    console.log(`[zalo-webhook] POST nhận được — body_len=${rawBody.length} signature_len=${signature.length} ip=${req.headers.get("x-forwarded-for") ?? "unknown"}`);
+
     if (!verifyZaloSignature(rawBody, signature)) {
-      console.warn("[zalo-webhook] Chữ ký không hợp lệ");
+      console.warn(`[zalo-webhook] Chữ ký KHÔNG hợp lệ — received="${signature}" expected="${process.env.ZALO_BOT_SECRET ?? "(empty)"}"`);
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
