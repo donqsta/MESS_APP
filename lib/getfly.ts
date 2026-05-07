@@ -9,6 +9,37 @@ const GETFLY_BASE_URL = process.env.GETFLY_BASE_URL ?? "";
 const GETFLY_API_KEY = process.env.GETFLY_API_KEY ?? "";
 const GETFLY_RELATION_ID_LEAD_MOI = Number(process.env.GETFLY_RELATION_ID_LEAD_MOI ?? "1");
 
+// ── Getfly lookup cache ───────────────────────────────────────────────────────
+
+interface GetflyLookupItem { id: number; name: string }
+let _typesCache: GetflyLookupItem[] | null = null;
+
+async function fetchGetflyList(endpoint: string): Promise<GetflyLookupItem[]> {
+  if (!GETFLY_BASE_URL || !GETFLY_API_KEY) return [];
+  try {
+    const res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/${endpoint}?limit=200`, {
+      headers: { "X-API-KEY": GETFLY_API_KEY },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as { data?: GetflyLookupItem[] };
+    return data.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Trả về ID loại khách hàng "KH tiềm năng" hoặc loại đầu tiên. */
+async function resolveTypeId(): Promise<number | undefined> {
+  if (!_typesCache) _typesCache = await fetchGetflyList("account_type");
+  if (!_typesCache.length) return undefined;
+  const match =
+    _typesCache.find((t) => t.name.toLowerCase().includes("tiềm năng")) ??
+    _typesCache.find((t) => t.name.toLowerCase().includes("lead")) ??
+    _typesCache[0];
+  return match?.id;
+}
+
 // Fanpage fallback đọc từ data/projects.json (field pageIds) — không còn hardcode
 
 // ── Bắt SĐT Việt Nam (hỗ trợ viết liền, cách khoảng, dấu chấm, gạch ngang) ──
@@ -383,12 +414,15 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     description = needSummaryText || `Khách để lại SĐT ${input.phone} để được tư vấn thêm.`;
   }
 
+  // Resolve account_type ID từ Getfly API (cached)
+  const typeId = await resolveTypeId();
+
   const payload: Record<string, unknown> = {
     account_name: input.accountName,
     phone_office: input.phone,
     relation_id: GETFLY_RELATION_ID_LEAD_MOI,
-    account_source_names: [sourceName],   // tên nguồn — Getfly tự tạo nếu chưa có
-    account_type_names: ["KH tiềm năng"],
+    account_source_names: [sourceName],   // text-based — Getfly tự tạo nếu chưa có
+    ...(typeId ? { account_type: typeId } : { account_type_names: ["KH tiềm năng"] }),
     description,
     custom_fields: {
       du_an_quan_tam: projectIds,
@@ -398,7 +432,7 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
   };
 
   // Gán người phụ trách: dùng assigneeGetflyUserId nếu có, mặc định Getfly #1 (Ban Giám Đốc)
-  payload.user_id = input.assigneeGetflyUserId ?? 1;
+  payload.account_manager = input.assigneeGetflyUserId ?? 1;
 
   const doFetch = (body: Record<string, unknown>) =>
     fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
@@ -445,13 +479,17 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
       data = await res.json();
     }
 
-    // Attempt 3: payload tối thiểu khi 2 lần trên đều thất bại
+    // Attempt 3: payload tối thiểu nhưng giữ các trường bắt buộc của Getfly
     if (!res.ok) {
       console.warn("[Getfly] Retry lần 3 với payload tối thiểu...");
-      const payloadMinimal = {
+      const payloadMinimal: Record<string, unknown> = {
         account_name: input.accountName,
         phone_office: input.phone,
         relation_id: GETFLY_RELATION_ID_LEAD_MOI,
+        account_manager: input.assigneeGetflyUserId ?? 1,
+        account_source_names: [sourceName],
+        ...(typeId ? { account_type: typeId } : {}),
+        ...(projectIds.length ? { custom_fields: { du_an_quan_tam: projectIds } } : {}),
       };
       res = await doFetchWithRetry(payloadMinimal);
       data = await res.json();
@@ -502,7 +540,8 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
 }
 
 /**
- * Gán người phụ trách (user_id) cho một account đã tồn tại trên Getfly.
+ * Gán người phụ trách cho một account đã tồn tại trên Getfly.
+ * Dùng PUT /api/v6.1/account với current_account_id + account_manager.
  * Gọi sau khi nhân viên xác nhận nhận lead qua Zalo.
  */
 export async function assignGetflyAccountOwner(
@@ -514,14 +553,14 @@ export async function assignGetflyAccountOwner(
     return false;
   }
   try {
-    const res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/account/${accountId}`, {
+    const res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "X-API-KEY": GETFLY_API_KEY },
-      body: JSON.stringify({ user_id: getflyUserId }),
+      body: JSON.stringify({ current_account_id: accountId, account_manager: getflyUserId }),
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
-      console.log(`[Getfly] Gán phụ trách OK: accountId=${accountId} userId=${getflyUserId}`);
+      console.log(`[Getfly] Gán phụ trách OK: accountId=${accountId} manager=${getflyUserId}`);
       return true;
     }
     const errText = await res.text().catch(() => "");
