@@ -22,6 +22,8 @@ export interface Employee {
   active: boolean;
   phone?: string;      // SĐT lấy từ Getfly (contact_mobile)
   position?: string;   // Phòng ban / chức danh (dept_name từ Getfly)
+  /** Admin có thể đăng ký nhóm Zalo bằng lệnh setgroup trong nhóm */
+  isAdmin?: boolean;
 }
 
 export interface GroupMember {
@@ -89,6 +91,10 @@ function emptyConfig(): DistributionConfig {
 
 export function getEmployee(id: string): Employee | undefined {
   return loadConfig().employees.find((e) => e.id === id);
+}
+
+export function getEmployeeByZaloId(zaloId: string): Employee | undefined {
+  return loadConfig().employees.find((e) => e.zaloId === zaloId);
 }
 
 // ── Weighted round-robin selection ────────────────────────────────────────────

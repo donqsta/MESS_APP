@@ -40,6 +40,7 @@ data/uhchat-getfly-phone-synced.json
 
 # zalo employee phone→id registry (sensitive)
 data/zalo-employee-registry.json
+data/zalo-groups.json
 
 # getfly pending leads queue (sensitive — chứa SĐT khách hàng)
 data/pending-leads.json

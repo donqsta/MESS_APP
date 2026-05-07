@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyZaloSignature, handleZaloReply, sendZaloMessage } from "@/lib/zalo-bot";
+import { verifyZaloSignature, handleZaloReply, sendZaloMessage, sendZaloGroupMessage } from "@/lib/zalo-bot";
 import {
   isPendingRegistration,
   startPendingRegistration,
@@ -7,6 +7,8 @@ import {
   getPhoneByZaloId,
 } from "@/lib/zalo-employee-registry";
 import { extractPhoneFromMessage } from "@/lib/zalo-phone-extractor";
+import { getEmployeeByZaloId } from "@/lib/lead-distributor";
+import { saveZaloGroup } from "@/lib/zalo-groups";
 
 /**
  * Zalo Bot webhook endpoint.
@@ -77,6 +79,28 @@ export async function POST(req: NextRequest) {
       // ── Resolve pending online-check pings (DM only) ─────────────────────
       if (!isGroupMsg) {
         await handleZaloReply(senderId, text);
+      }
+
+      // ── Lệnh setgroup từ admin trong nhóm ─────────────────────────────────
+      // Admin tag bot + gửi: setgroup [tên nhóm]
+      if (isGroupMsg && groupId) {
+        const setgroupMatch = text.match(/setgroup\s+(.+)/i);
+        if (setgroupMatch) {
+          const employee = getEmployeeByZaloId(senderId);
+          if (employee?.isAdmin) {
+            const groupName = setgroupMatch[1].trim();
+            saveZaloGroup(groupId, groupName);
+            await sendZaloGroupMessage(
+              groupId,
+              `✅ Đã đăng ký nhóm "${groupName}" (ID: ${groupId}).\nAdmin vào giao diện quản lý để gắn nhóm với dự án.`,
+            );
+            console.log(`[zalo-webhook] Admin ${employee.name} đăng ký nhóm: id=${groupId} name="${groupName}"`);
+          } else {
+            await sendZaloGroupMessage(groupId, "⚠️ Chỉ admin mới có thể đăng ký nhóm.");
+            console.log(`[zalo-webhook] setgroup bị từ chối — ${senderId} không phải admin`);
+          }
+          return NextResponse.json({ ok: true });
+        }
       }
 
       // ── Luồng đăng ký (DM hoặc nhóm) ────────────────────────────────────
@@ -184,25 +208,6 @@ async function findGetflyEmployeeByPhone(phone: string): Promise<GetflyUserMin |
   } catch (err) {
     console.warn("[zalo-webhook] Không tra được Getfly:", err instanceof Error ? err.message : err);
     return null;
-  }
-}
-
-// ── Send group message ─────────────────────────────────────────────────────────
-
-async function sendZaloGroupMessage(groupId: string, text: string): Promise<void> {
-  const token = process.env.ZALO_BOT_TOKEN;
-  if (!token) return;
-
-  try {
-    // Zalo Bot Platform: group cũng dùng chat_id = groupId
-    const url = `https://bot-api.zaloplatforms.com/bot${token}/sendMessage`;
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: groupId, text }),
-    });
-  } catch (err) {
-    console.warn("[zalo-webhook] Gửi tin nhóm thất bại:", err instanceof Error ? err.message : err);
   }
 }
 

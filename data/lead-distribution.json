@@ -232,7 +232,8 @@
       "zaloId": "beb33715ac45451b1c54",
       "active": true,
       "phone": "0778022023",
-      "position": "PHÒNG MARKETING"
+      "position": "PHÒNG MARKETING",
+      "isAdmin": true
     }
   ],
   "projects": {},

@@ -156,3 +156,62 @@ export async function notifyLeadAssigned(
 
   await sendZaloMessage(employee.zaloId, msg);
 }
+
+// ── Group message ──────────────────────────────────────────────────────────────
+
+/**
+ * Gửi tin nhắn vào nhóm Zalo.
+ * Dùng cùng sendMessage API — Zalo Bot Platform dùng chat_id = groupId.
+ */
+export async function sendZaloGroupMessage(groupId: string, text: string): Promise<boolean> {
+  const token = getZaloToken();
+  if (!token) {
+    console.warn("[zalo-bot] sendZaloGroupMessage: chưa cấu hình ZALO_BOT_TOKEN");
+    return false;
+  }
+  try {
+    const url = `https://bot-api.zaloplatforms.com/bot${token}/sendMessage`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: groupId, text }),
+    });
+    const data = await res.json() as { ok: boolean; description?: string };
+    if (!data.ok) {
+      console.warn(`[zalo-bot] Gửi tin nhóm thất bại (groupId=${groupId}):`, data.description);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[zalo-bot] sendZaloGroupMessage exception:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/**
+ * Gửi thông báo lên nhóm Zalo khi nhân viên nhận lead.
+ * Chỉ hiện tên khách bị che (bảo mật thông tin) — không lộ SĐT.
+ */
+export async function notifyGroupLeadAccepted(
+  groupId: string,
+  employee: Employee,
+  leadDetails: { name: string; phone: string; projectName?: string },
+): Promise<void> {
+  const maskedName = maskValue(leadDetails.name);
+  const maskedPhone = maskValue(leadDetails.phone);
+  const msg =
+    `📣 Lead đã được nhận!\n` +
+    `👤 Nhân viên: @${employee.name}\n` +
+    `📞 Khách: ${maskedName} | ${maskedPhone}\n` +
+    (leadDetails.projectName ? `🏢 Dự án: ${leadDetails.projectName}` : "");
+
+  await sendZaloGroupMessage(groupId, msg);
+}
+
+/** Giữ 2 ký tự đầu, che phần còn lại bằng *** */
+function maskValue(value: string): string {
+  if (!value) return "***";
+  const trimmed = value.trim();
+  if (trimmed.length <= 2) return trimmed + "***";
+  return trimmed.slice(0, 2) + "***";
+}

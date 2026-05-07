@@ -397,9 +397,8 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     },
   };
 
-  if (input.assigneeGetflyUserId) {
-    payload.user_id = input.assigneeGetflyUserId;
-  }
+  // Gán người phụ trách: dùng assigneeGetflyUserId nếu có, mặc định Getfly #1 (Ban Giám Đốc)
+  payload.user_id = input.assigneeGetflyUserId ?? 1;
 
   const doFetch = (body: Record<string, unknown>) =>
     fetch(`${GETFLY_BASE_URL}/api/v6.1/account`, {
@@ -499,5 +498,37 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     const cause = (err as { cause?: { message?: string; code?: string } })?.cause;
     console.error("[Getfly] Exception:", msg, cause ? `| cause: ${cause.message ?? ""} code=${cause.code ?? ""}` : "");
     return { success: false, error: msg };
+  }
+}
+
+/**
+ * Gán người phụ trách (user_id) cho một account đã tồn tại trên Getfly.
+ * Gọi sau khi nhân viên xác nhận nhận lead qua Zalo.
+ */
+export async function assignGetflyAccountOwner(
+  accountId: number,
+  getflyUserId: number,
+): Promise<boolean> {
+  if (!GETFLY_BASE_URL || !GETFLY_API_KEY) {
+    console.warn("[Getfly] assignGetflyAccountOwner: chưa cấu hình GETFLY_BASE_URL / GETFLY_API_KEY");
+    return false;
+  }
+  try {
+    const res = await fetch(`${GETFLY_BASE_URL}/api/v6.1/account/${accountId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-API-KEY": GETFLY_API_KEY },
+      body: JSON.stringify({ user_id: getflyUserId }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) {
+      console.log(`[Getfly] Gán phụ trách OK: accountId=${accountId} userId=${getflyUserId}`);
+      return true;
+    }
+    const errText = await res.text().catch(() => "");
+    console.warn(`[Getfly] Gán phụ trách thất bại: accountId=${accountId} status=${res.status} body=${errText.slice(0, 200)}`);
+    return false;
+  } catch (err) {
+    console.error("[Getfly] assignGetflyAccountOwner exception:", err instanceof Error ? err.message : err);
+    return false;
   }
 }

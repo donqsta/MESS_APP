@@ -11,8 +11,10 @@
  */
 
 import { getCandidates, advanceState, Employee } from "./lead-distributor";
-import { pingEmployee, waitForOnline, notifyLeadAssigned } from "./zalo-bot";
+import { pingEmployee, waitForOnline, notifyLeadAssigned, notifyGroupLeadAccepted } from "./zalo-bot";
 import { matchProject } from "./projectMatcher";
+import { assignGetflyAccountOwner } from "./getfly";
+import { getGroupByProject } from "./zalo-groups";
 
 const ZALO_TIMEOUT_MS = 60_000;
 
@@ -23,6 +25,8 @@ export interface LeadDetails {
   projectName?: string;
   summary: string;
   pageUrl?: string;
+  /** Getfly account ID — dùng để gán người phụ trách sau khi nhân viên accept */
+  getflyAccountId?: number;
 }
 
 /**
@@ -64,8 +68,19 @@ export async function distributeAfterCreate(details: LeadDetails): Promise<void>
     const online = await waitForOnline(employee, ZALO_TIMEOUT_MS);
     if (online) {
       advanceState(projectId, employee.id);
-      console.log(`[distributor] ${employee.name} online → gửi chi tiết lead`);
+      console.log(`[distributor] ${employee.name} online → gán phụ trách + gửi chi tiết lead`);
+      // Gán người phụ trách trên Getfly CRM
+      if (details.getflyAccountId && employee.getflyUserId) {
+        await assignGetflyAccountOwner(details.getflyAccountId, employee.getflyUserId);
+      }
+      // Thông báo chi tiết cho nhân viên (DM)
       await notifyLeadAssigned(employee, details);
+      // Thông báo lên nhóm Zalo của dự án (nếu có)
+      const group = getGroupByProject(String(projectId));
+      if (group) {
+        await notifyGroupLeadAccepted(group.groupId, employee, details);
+        console.log(`[distributor] Đã thông báo nhóm "${group.groupName}" (${group.groupId})`);
+      }
       return;
     }
 

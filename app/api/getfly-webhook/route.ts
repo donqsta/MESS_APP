@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
         phone,
         summary: summary.slice(0, 200),
         pageUrl: sourceHint, // dùng để matchProject nếu chứa domain
+        getflyAccountId: accountId, // để gán người phụ trách sau khi NV accept
       }).catch((e) => console.warn("[getfly-webhook] Lỗi phân bổ:", e));
     }
   }
@@ -142,9 +143,9 @@ export async function POST(req: NextRequest) {
   // ── opportunity.created ───────────────────────────────────────────────────
   if (event === "opportunity.created") {
     // Opportunity thường kèm account_id
-    const accountId = Number(data.account_id ?? 0);
-    if (accountId) {
-      const account = await fetchAccount(accountId);
+    const oppAccountId = Number(data.account_id ?? 0);
+    if (oppAccountId) {
+      const account = await fetchAccount(oppAccountId);
       if (account?.phone_office) {
         const sourceHint = extractSourceHint(account.account_source_details);
         distributeAfterCreate({
@@ -152,6 +153,7 @@ export async function POST(req: NextRequest) {
           phone:   account.phone_office,
           summary: (account.description ?? "").slice(0, 200),
           pageUrl: sourceHint,
+          getflyAccountId: oppAccountId,
         }).catch((e) => console.warn("[getfly-webhook] Lỗi phân bổ opportunity:", e));
       }
     }

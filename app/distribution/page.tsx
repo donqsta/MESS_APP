@@ -14,6 +14,7 @@ interface Employee {
   active: boolean;
   phone?: string;
   position?: string; // Phòng ban / chức danh
+  isAdmin?: boolean; // Có thể đăng ký nhóm Zalo bằng lệnh setgroup
 }
 
 interface GetflyUser {
@@ -72,6 +73,13 @@ interface ProjectEntry {
   name: string;
 }
 
+interface ZaloGroup {
+  groupId: string;
+  groupName: string;
+  projectId?: string;
+  registeredAt: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function genId(): string {
@@ -99,7 +107,7 @@ export default function DistributionPage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   // Employee form state
-  const [empForm, setEmpForm] = useState<Employee>({ id: "", name: "", getflyUserId: 0, zaloId: "", active: true, phone: "", position: "" });
+  const [empForm, setEmpForm] = useState<Employee>({ id: "", name: "", getflyUserId: 0, zaloId: "", active: true, phone: "", position: "", isAdmin: false });
   const [editEmpId, setEditEmpId] = useState<string | null>(null);
 
   // Getfly sync
@@ -119,6 +127,11 @@ export default function DistributionPage() {
   // Active project tab
   const [activeProject, setActiveProject] = useState<string | null>(null);
 
+  // Zalo groups
+  const [zaloGroups, setZaloGroups] = useState<ZaloGroup[]>([]);
+  const [newGroupId, setNewGroupId] = useState("");
+  const [newGroupName, setNewGroupName] = useState("");
+
   // Ping status per employee
   const [pinging, setPinging] = useState<Record<string, boolean>>({});
 
@@ -130,9 +143,10 @@ export default function DistributionPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [cfgRes, projRes] = await Promise.all([
+      const [cfgRes, projRes, groupsRes] = await Promise.all([
         fetch("/api/lead-distribution").then((r) => r.json()),
         fetch("/api/bot/sync-projects").then((r) => r.json()),
+        fetch("/api/zalo-groups").then((r) => r.json()),
       ]);
       setConfig(cfgRes as DistributionConfig);
       const allProjects: ProjectEntry[] = (projRes.projects ?? []).filter((p: ProjectEntry) => p.id !== 41);
@@ -140,6 +154,7 @@ export default function DistributionPage() {
       if (!activeProject && allProjects.length > 0) {
         setActiveProject(String(allProjects[0].id));
       }
+      setZaloGroups((groupsRes as { groups?: ZaloGroup[] }).groups ?? []);
     } catch {
       showToast("Không thể tải dữ liệu", false);
     } finally {
@@ -672,7 +687,12 @@ export default function DistributionPage() {
                       </button>
 
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800">{emp.name}</p>
+                        <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5">
+                          {emp.name}
+                          {emp.isAdmin && (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold">ADMIN</span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-400">
                           {emp.position
                             ? <span className="text-indigo-500 font-medium">{emp.position} · </span>
@@ -770,6 +790,17 @@ export default function DistributionPage() {
                             className="w-full border border-indigo-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 bg-white"
                           />
                         </div>
+                        <div className="flex flex-col justify-end pb-1">
+                          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={empForm.isAdmin ?? false}
+                              onChange={(e) => setEmpForm((f) => ({ ...f, isAdmin: e.target.checked }))}
+                              className="w-3.5 h-3.5 accent-amber-500"
+                            />
+                            <span className="text-xs text-amber-700 font-medium">Admin</span>
+                          </label>
+                        </div>
                         <button
                           onClick={saveEmployee}
                           disabled={saving}
@@ -839,6 +870,15 @@ export default function DistributionPage() {
                 />
               </div>
               <div className="flex items-end gap-2">
+                <label className="flex items-center gap-1.5 cursor-pointer select-none pb-2">
+                  <input
+                    type="checkbox"
+                    checked={empForm.isAdmin ?? false}
+                    onChange={(e) => setEmpForm((f) => ({ ...f, isAdmin: e.target.checked }))}
+                    className="w-3.5 h-3.5 accent-amber-500"
+                  />
+                  <span className="text-xs text-amber-700 font-medium">Admin</span>
+                </label>
                 <button
                   onClick={saveEmployee}
                   disabled={saving}
@@ -1003,6 +1043,121 @@ export default function DistributionPage() {
           )}
         </section>
 
+        {/* ── Nhóm Zalo theo dự án ─────────────────────────────────────────── */}
+        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-teal-600" />
+            <h2 className="font-semibold text-gray-800 text-sm">Nhóm Zalo thông báo theo dự án</h2>
+            <span className="ml-auto text-xs text-gray-400">
+              Admin tag bot trong nhóm, nhắn{" "}
+              <code className="bg-gray-100 px-1 rounded">setgroup [tên nhóm]</code>{" "}
+              để đăng ký tự động
+            </span>
+          </div>
+
+          {/* Registered groups list */}
+          <div className="divide-y divide-gray-100">
+            {zaloGroups.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-6">
+                Chưa có nhóm nào. Đăng ký bằng lệnh setgroup hoặc thêm thủ công bên dưới.
+              </p>
+            )}
+            {zaloGroups.map((g) => (
+              <div key={g.groupId} className="flex items-center gap-3 px-5 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">{g.groupName}</p>
+                  <p className="text-xs text-gray-400 font-mono">{g.groupId}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={g.projectId ?? ""}
+                    onChange={async (e) => {
+                      const pid = e.target.value;
+                      await fetch("/api/zalo-groups", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ groupId: g.groupId, projectId: pid || null }),
+                      });
+                      setZaloGroups((prev) =>
+                        prev.map((gr) => gr.groupId === g.groupId ? { ...gr, projectId: pid || undefined } : gr)
+                      );
+                      showToast(pid ? `Đã gắn nhóm với dự án` : "Đã bỏ liên kết dự án");
+                    }}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:border-teal-400 bg-white"
+                  >
+                    <option value="">— Chưa gắn dự án —</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={String(p.id)}>{p.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Xóa nhóm "${g.groupName}"?`)) return;
+                      await fetch(`/api/zalo-groups?groupId=${encodeURIComponent(g.groupId)}`, { method: "DELETE" });
+                      setZaloGroups((prev) => prev.filter((gr) => gr.groupId !== g.groupId));
+                      showToast("Đã xóa nhóm");
+                    }}
+                    className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add group manually */}
+          <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-xs text-gray-500 mb-1">Group ID</label>
+              <input
+                value={newGroupId}
+                onChange={(e) => setNewGroupId(e.target.value)}
+                placeholder="Zalo group_id..."
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-teal-400"
+              />
+            </div>
+            <div className="flex-1 min-w-[180px]">
+              <label className="block text-xs text-gray-500 mb-1">Tên nhóm</label>
+              <input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Nhóm Spring Ville..."
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-teal-400"
+              />
+            </div>
+            <button
+              onClick={async () => {
+                if (!newGroupId.trim() || !newGroupName.trim()) {
+                  showToast("Nhập Group ID và tên nhóm", false);
+                  return;
+                }
+                const res = await fetch("/api/zalo-groups", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ groupId: newGroupId.trim(), groupName: newGroupName.trim() }),
+                });
+                const data = await res.json() as { ok?: boolean; group?: ZaloGroup };
+                if (data.ok && data.group) {
+                  setZaloGroups((prev) => {
+                    const exists = prev.find((g) => g.groupId === data.group!.groupId);
+                    if (exists) return prev.map((g) => g.groupId === data.group!.groupId ? data.group! : g);
+                    return [...prev, data.group!];
+                  });
+                  setNewGroupId(""); setNewGroupName("");
+                  showToast("Đã thêm nhóm");
+                } else {
+                  showToast("Lỗi thêm nhóm", false);
+                }
+              }}
+              className="flex items-center gap-1.5 bg-teal-600 text-white text-xs px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors self-end"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Thêm thủ công
+            </button>
+          </div>
+        </section>
+
         {/* ── Hướng dẫn Zalo Bot ───────────────────────────────────────────── */}
         <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
@@ -1021,6 +1176,11 @@ ZALO_BOT_SECRET=your_app_secret`}
               </li>
               <li>Webhook URL: <code className="bg-gray-100 px-1 rounded text-xs">https://your-domain/api/zalo-webhook</code></li>
               <li>Nhân viên <strong>follow</strong> OA → nhắn <code className="bg-gray-100 px-1 rounded text-xs">dangky</code> → trả lời SĐT → tự đăng ký Zalo ID</li>
+              <li>
+                <strong>Đăng ký nhóm:</strong> Add bot vào nhóm Zalo → Admin (tích ô Admin trong quản lý nhân viên) tag bot và nhắn{" "}
+                <code className="bg-gray-100 px-1 rounded text-xs">setgroup [Tên nhóm]</code> → Bot lưu nhóm tự động →
+                Admin gắn nhóm với dự án trong giao diện trên
+              </li>
             </ol>
             <p className="text-xs text-gray-400">
               Nếu chưa cấu hình Zalo Bot, hệ thống sẽ tạo lead bình thường mà không check online hay gửi thông báo.
