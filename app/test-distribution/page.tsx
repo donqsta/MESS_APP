@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { RefreshCw, RotateCcw, ChevronLeft, Zap, Check, Clock, ChevronRight, AlertTriangle } from "lucide-react";
+import { RefreshCw, RotateCcw, ChevronLeft, Zap, Check, Clock, ChevronRight, AlertTriangle, Plus } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,23 +60,18 @@ interface ConcurrentSlot {
   elapsedMs?: number;
 }
 
+interface MultiPendingLead {
+  id: number;
+  candidate: AnnotatedEmployee | null;
+  groupName: string;
+  skippedIds: string[];
+  skippedNames: Array<{ name: string; groupName: string }>;
+  status: "reserving" | "pinging" | "accepted" | "no_response_all";
+  acceptedBy?: { name: string; groupName: string };
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** Group candidates by groupId (order of first appearance), regardless of position in array */
-function groupQueue(queue: AnnotatedEmployee[]): Array<{ groupId: string; groupName: string; groupWeight: number; members: Array<{ emp: AnnotatedEmployee; idx: number }> }> {
-  const map = new Map<string, { groupId: string; groupName: string; groupWeight: number; members: Array<{ emp: AnnotatedEmployee; idx: number }> }>();
-  const order: string[] = [];
-  for (let i = 0; i < queue.length; i++) {
-    const emp = queue[i];
-    const key = emp.groupId || `__${i}`;
-    if (!map.has(key)) {
-      map.set(key, { groupId: emp.groupId, groupName: emp.groupName, groupWeight: emp.groupWeight, members: [] });
-      order.push(key);
-    }
-    map.get(key)!.members.push({ emp, idx: i });
-  }
-  return order.map((k) => map.get(k)!);
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -94,6 +89,10 @@ export default function TestDistributionPage() {
   const [concurrentCount, setConcurrentCount] = useState(4);
   const [concurrentSlots, setConcurrentSlots] = useState<ConcurrentSlot[]>([]);
   const [concurrentRunning, setConcurrentRunning] = useState(false);
+
+  // Multi-pending: thêm từng lead trong khi lead trước vẫn đang chờ
+  const [multiPending, setMultiPending] = useState<MultiPendingLead[]>([]);
+  const [multiPendingBusy, setMultiPendingBusy] = useState(false);
 
   const load = useCallback(async (pid?: string) => {
     const p = pid ?? selectedProject;
@@ -113,66 +112,6 @@ export default function TestDistributionPage() {
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedProject) load(selectedProject); }, [selectedProject]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Start lead ────────────────────────────────────────────────────────────
-
-  function startLead() {
-    if (!candidates.length || activeLead?.status === "pending") return;
-    leadSeq++;
-    setActiveLead({ id: leadSeq, queue: candidates, currentIdx: 0, status: "pending", skipped: [] });
-  }
-
-  // ── Accept ────────────────────────────────────────────────────────────────
-
-  async function accept() {
-    if (!activeLead || activeLead.status !== "pending" || loading) return;
-    setLoading(true);
-    const emp = activeLead.queue[activeLead.currentIdx];
-
-    await fetch("/api/debug/simulate-distribution", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: selectedProject, employeeId: emp.id }),
-    });
-
-    const entry: LogEntry = {
-      seq: activeLead.id, time: new Date().toLocaleTimeString("vi-VN"),
-      accepted: { name: emp.name, groupName: emp.groupName },
-      skipped: activeLead.skipped.map((e) => ({ name: e.name, groupName: e.groupName })),
-      result: "accepted",
-    };
-    setLog((l) => [entry, ...l]);
-    setActiveLead((prev) => prev ? { ...prev, status: "accepted", acceptedBy: emp } : null);
-    await load(selectedProject);
-    setLoading(false);
-  }
-
-  // ── No response ───────────────────────────────────────────────────────────
-
-  function noResponse() {
-    if (!activeLead || activeLead.status !== "pending") return;
-    const emp = activeLead.queue[activeLead.currentIdx];
-    const newSkipped = [...activeLead.skipped, emp];
-    const skippedIds = new Set(newSkipped.map((e) => e.id));
-
-    // Find next candidate that hasn't been pinged yet
-    let nextIdx = activeLead.currentIdx + 1;
-    while (nextIdx < activeLead.queue.length && skippedIds.has(activeLead.queue[nextIdx].id)) {
-      nextIdx++;
-    }
-
-    if (nextIdx >= activeLead.queue.length) {
-      const entry: LogEntry = {
-        seq: activeLead.id, time: new Date().toLocaleTimeString("vi-VN"),
-        skipped: newSkipped.map((e) => ({ name: e.name, groupName: e.groupName })),
-        result: "no_response_all",
-      };
-      setLog((l) => [entry, ...l]);
-      setActiveLead((prev) => prev ? { ...prev, status: "no_response_all", skipped: newSkipped } : null);
-    } else {
-      setActiveLead((prev) => prev ? { ...prev, currentIdx: nextIdx, skipped: newSkipped } : null);
-    }
-  }
 
   // ── Concurrent simulation ─────────────────────────────────────────────────
 
@@ -294,10 +233,116 @@ export default function TestDistributionPage() {
     ));
   }
 
+  // ── Multi-pending: nhiều lead pending cùng lúc ────────────────────────────
+
+  async function addPendingLead() {
+    if (!selectedProject || multiPendingBusy) return;
+    setMultiPendingBusy(true);
+    leadSeq++;
+    const thisId = leadSeq;
+
+    setMultiPending((prev) => [...prev, {
+      id: thisId, candidate: null, groupName: "", skippedIds: [], skippedNames: [],
+      status: "reserving" as const,
+    }]);
+
+    const res = await fetch("/api/debug/simulate-distribution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reserve", projectId: selectedProject }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      setMultiPending((prev) => prev.map((l) =>
+        l.id === thisId ? { ...l, status: "no_response_all" as const } : l
+      ));
+    } else {
+      const emp = data.employee as AnnotatedEmployee;
+      setMultiPending((prev) => prev.map((l) =>
+        l.id === thisId
+          ? { ...l, status: "pinging" as const, candidate: emp, groupName: data.group?.name ?? "" }
+          : l
+      ));
+    }
+    setMultiPendingBusy(false);
+  }
+
+  async function multiAccept(leadId: number) {
+    const lead = multiPending.find((l) => l.id === leadId);
+    if (!lead?.candidate || lead.status !== "pinging") return;
+    const { id, name } = lead.candidate;
+    const { groupName, skippedNames } = lead;
+
+    setMultiPending((prev) => prev.map((l) =>
+      l.id === leadId ? { ...l, status: "accepted" as const, acceptedBy: { name, groupName } } : l
+    ));
+
+    await fetch("/api/debug/simulate-distribution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "accept", projectId: selectedProject, employeeId: id }),
+    });
+
+    leadSeq++;
+    setLog((l) => [{ seq: leadSeq, time: new Date().toLocaleTimeString("vi-VN"), accepted: { name, groupName }, skipped: skippedNames, result: "accepted" }, ...l]);
+    await load(selectedProject);
+  }
+
+  async function multiNoResponse(leadId: number) {
+    const lead = multiPending.find((l) => l.id === leadId);
+    if (!lead?.candidate || lead.status !== "pinging") return;
+    const { id, name } = lead.candidate;
+    const { groupName, skippedIds, skippedNames } = lead;
+    const newSkippedIds = [...skippedIds, id];
+    const newSkippedNames = [...skippedNames, { name, groupName }];
+
+    setMultiPending((prev) => prev.map((l) =>
+      l.id === leadId ? { ...l, status: "reserving" as const, candidate: null, skippedIds: newSkippedIds, skippedNames: newSkippedNames } : l
+    ));
+
+    const res = await fetch("/api/debug/simulate-distribution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "release", projectId: selectedProject, employeeId: id, skippedIds }),
+    });
+    const data = await res.json();
+
+    if (!data.ok || !data.next) {
+      setMultiPending((prev) => prev.map((l) =>
+        l.id === leadId ? { ...l, status: "no_response_all" as const, skippedNames: newSkippedNames } : l
+      ));
+      leadSeq++;
+      setLog((l) => [{ seq: leadSeq, time: new Date().toLocaleTimeString("vi-VN"), skipped: newSkippedNames, result: "no_response_all" }, ...l]);
+      return;
+    }
+
+    const nextEmp = data.next.employee as AnnotatedEmployee;
+    const nextGroupName = data.next.group?.name ?? "";
+    setMultiPending((prev) => prev.map((l) =>
+      l.id === leadId
+        ? { ...l, status: "pinging" as const, candidate: nextEmp, groupName: nextGroupName, skippedIds: newSkippedIds, skippedNames: newSkippedNames }
+        : l
+    ));
+  }
+
+  function clearMultiPending() {
+    multiPending.filter((l) => l.status === "pinging" && l.candidate).forEach((lead) => {
+      fetch("/api/debug/simulate-distribution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "release", projectId: selectedProject, employeeId: lead.candidate!.id }),
+      });
+    });
+    setMultiPending([]);
+  }
+
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   async function resetState() {
     if (!selectedProject) return;
+    clearMultiPending();
+    setMultiPending([]);
     await fetch(`/api/debug/simulate-distribution?projectId=${selectedProject}`, { method: "DELETE" });
     setActiveLead(null);
     setLog([]);
@@ -320,12 +365,6 @@ export default function TestDistributionPage() {
     const pct = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
     return { ...g, count, pct };
   }) ?? [];
-
-  const currentCandidate = activeLead?.status === "pending"
-    ? activeLead.queue[activeLead.currentIdx]
-    : null;
-
-  const queueGroups = activeLead ? groupQueue(activeLead.queue) : [];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -358,7 +397,7 @@ export default function TestDistributionPage() {
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Dự án</label>
             <select
               value={selectedProject}
-              onChange={(e) => { setSelectedProject(e.target.value); setActiveLead(null); }}
+              onChange={(e) => { setSelectedProject(e.target.value); setActiveLead(null); clearMultiPending(); }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-teal-400"
             >
               {projectIds.map((pid) => (
@@ -421,7 +460,7 @@ export default function TestDistributionPage() {
                       {g.members.map((m) => {
                         const emp = empMap.get(m.employeeId);
                         const count = gs.counts?.[m.employeeId] ?? 0;
-                        const isNext = !activeLead && candidates[0]?.id === m.employeeId && candidates[0]?.groupId === g.id;
+                        const isNext = multiPending.length === 0 && candidates[0]?.id === m.employeeId && candidates[0]?.groupId === g.id;
                         return (
                           <div key={m.employeeId}
                             className={`flex items-center gap-2 text-xs px-2 py-1 rounded-lg mb-0.5 ${isNext ? "bg-teal-50 border border-teal-200" : "bg-gray-50"}`}>
@@ -450,145 +489,117 @@ export default function TestDistributionPage() {
         {/* ── Column 2: Simulation ──────────────────────────────────────── */}
         <div className="space-y-4">
 
-          {/* Start button */}
-          {(!activeLead || activeLead.status !== "pending") && (
-            <button onClick={startLead}
-              disabled={loading || candidates.length === 0}
-              className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white rounded-xl px-4 py-4 text-sm font-semibold transition-colors">
-              <Zap className="w-4 h-4" />
-              Có lead mới vào
-            </button>
-          )}
+          {/* Always-visible new lead button */}
+          <button onClick={addPendingLead}
+            disabled={multiPendingBusy || candidates.length === 0}
+            className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white rounded-xl px-4 py-4 text-sm font-semibold transition-colors">
+            <Zap className="w-4 h-4" />
+            {multiPendingBusy ? "Đang lấy NV..." : "Có lead mới vào"}
+          </button>
 
-          {/* Active lead */}
-          {activeLead && activeLead.status === "pending" && currentCandidate && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Lead #{activeLead.id} — đang phân bổ
-              </div>
-
-              {/* Queue grouped by group */}
-              <div className="space-y-2">
-                {queueGroups.map((gq, gqi) => {
-                  const isActiveGroup = gq.members.some((m) => m.idx === activeLead.currentIdx);
-                  const isSkippedGroup = gq.members.every((m) => m.idx < activeLead.currentIdx);
-                  return (
-                    <div key={`${gq.groupId}-${gqi}`}
-                      className={`rounded-lg border p-2 transition-all ${
-                        isSkippedGroup ? "border-gray-100 bg-gray-50 opacity-50" :
-                        isActiveGroup ? "border-yellow-200 bg-yellow-50" :
-                        "border-gray-100 bg-white"
-                      }`}>
-                      <div className="text-xs font-semibold mb-1.5 flex items-center gap-1">
-                        {isSkippedGroup && <span className="text-gray-400">✗ {gq.groupName}</span>}
-                        {isActiveGroup && <span className="text-yellow-700">🔔 {gq.groupName}</span>}
-                        {!isSkippedGroup && !isActiveGroup && <span className="text-gray-400">⏳ {gq.groupName} (fallback)</span>}
-                        <span className="text-gray-300 font-normal">{gq.groupWeight}%</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {gq.members.map(({ emp, idx }) => {
-                          const isCurrent = idx === activeLead.currentIdx;
-                          const isSkipped = idx < activeLead.currentIdx;
-                          return (
-                            <div key={emp.id}
-                              className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                                isCurrent ? "bg-yellow-100 border-yellow-300 text-yellow-800 font-semibold" :
-                                isSkipped ? "bg-gray-100 border-gray-200 text-gray-400 line-through" :
-                                "bg-white border-gray-200 text-gray-500"
-                              }`}>
-                              {isSkipped && <Clock className="w-2.5 h-2.5 flex-shrink-0" />}
-                              {emp.name}
-                              {!emp.zaloId && <span className="text-orange-400">⚠</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Ping panel */}
-              <div className="border border-yellow-200 bg-yellow-50 rounded-xl p-4">
-                <div className="text-xs text-yellow-600 font-semibold mb-3 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  Bot đang ping: <span className="font-bold ml-1">{currentCandidate.name}</span>
-                  <span className="ml-1 text-yellow-500">({currentCandidate.groupName})</span>
+          {/* Active + completed lead cards */}
+          {multiPending.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <div className="text-xs text-gray-400 flex items-center gap-3">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> đang ping</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> đã nhận</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> hết người</span>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-3 text-gray-600 mb-3 font-mono text-xs whitespace-pre-wrap leading-relaxed">
-                    {`🔔 Lead mới cần tư vấn!\nNguyễn Văn A | 09****** | ${projectName || "Dự án"}\n\nTrả lời:\n✅ "ok" / "nhận" → nhận lead\n❌ "bận" / "không" → chuyển người khác`}
+                <button onClick={clearMultiPending} className="text-xs text-gray-400 hover:text-red-500">Xóa tất cả</button>
+              </div>
+
+              {multiPending.map((lead) => (
+                <div key={lead.id} className={`rounded-xl border p-3 text-xs transition-all ${
+                  lead.status === "pinging" ? "bg-yellow-50 border-yellow-300" :
+                  lead.status === "accepted" ? "bg-green-50 border-green-200" :
+                  lead.status === "no_response_all" ? "bg-orange-50 border-orange-200" :
+                  "bg-gray-50 border-gray-100"
+                }`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="font-semibold text-gray-600">Lead #{lead.id}</span>
+                    {lead.skippedNames.length > 0 && (
+                      <span className="text-gray-400 truncate">bỏ qua: {lead.skippedNames.map((s) => s.name).join(" → ")}</span>
+                    )}
                   </div>
-                  {!currentCandidate.zaloId && (
-                    <div className="text-xs text-orange-500 bg-orange-50 border border-orange-200 rounded p-2 mb-3">
-                      ⚠ NV này chưa có Zalo ID — thực tế sẽ tự động bỏ qua và ping người tiếp theo.
+
+                  {lead.status === "reserving" && (
+                    <div className="text-gray-300 italic animate-pulse">Đang tìm NV rảnh...</div>
+                  )}
+
+                  {lead.status === "pinging" && lead.candidate && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-bold flex-shrink-0">
+                          {lead.candidate.name.charAt(0)}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-800">{lead.candidate.name}</span>
+                          <span className="text-gray-400 ml-1">({lead.groupName})</span>
+                          {!lead.candidate.zaloId && <span className="text-orange-400 ml-1">⚠ no zalo</span>}
+                        </div>
+                        <span className="ml-auto text-yellow-600 animate-pulse font-medium">🔔 pinging...</span>
+                      </div>
+                      <div className="bg-white border border-gray-100 rounded-lg p-2 mb-2 font-mono text-gray-500 whitespace-pre-wrap leading-relaxed">
+                        {`🔔 Lead mới cần tư vấn!\nNguyễn Văn A | 09****** | ${projectName || "Dự án"}\n\nTrả lời:\n✅ "ok" / "nhận" → nhận lead\n❌ "bận" / "không" → chuyển người khác`}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => multiAccept(lead.id)}
+                          className="flex-1 flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white rounded-lg px-2 py-2 font-medium transition-colors">
+                          <Check className="w-3 h-3" /> ✅ &quot;ok&quot; — Nhận
+                        </button>
+                        <button onClick={() => multiNoResponse(lead.id)}
+                          className="flex-1 flex items-center justify-center gap-1 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 rounded-lg px-2 py-2 font-medium transition-colors">
+                          <Clock className="w-3 h-3" /> ❌ Bận / timeout
+                        </button>
+                      </div>
                     </div>
                   )}
-                  <div className="flex gap-2">
-                    <button onClick={accept} disabled={loading}
-                      className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-lg px-3 py-2.5 text-sm font-medium transition-colors">
-                      <Check className="w-4 h-4" />
-                      ✅ &quot;ok&quot; — Nhận lead
-                    </button>
-                    <button onClick={noResponse} disabled={loading}
-                      className="flex-1 flex items-center justify-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors">
-                      <Clock className="w-4 h-4" />
-                      ❌ &quot;bận&quot; / timeout
-                    </button>
-                  </div>
-              </div>
-            </div>
-          )}
 
-          {/* Result: accepted */}
-          {activeLead?.status === "accepted" && activeLead.acceptedBy && (
-            <div className="bg-white rounded-xl border border-green-200 p-4 space-y-3">
-              <div className="flex items-center gap-2 text-green-700 font-semibold">
-                <Check className="w-5 h-5" />
-                Lead #{activeLead.id} — {activeLead.acceptedBy.name} nhận
-              </div>
-              {activeLead.skipped.length > 0 && (
-                <div className="text-xs text-gray-400 bg-gray-50 rounded p-2">
-                  Bỏ qua: {activeLead.skipped.map((e) => `${e.name}`).join(" → ")}
+                  {lead.status === "accepted" && lead.acceptedBy && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-green-700 font-semibold">
+                        <Check className="w-4 h-4" />
+                        {lead.acceptedBy.name} nhận
+                        <span className="text-gray-400 font-normal ml-1">({lead.acceptedBy.groupName})</span>
+                      </div>
+                      <div className="text-gray-400 font-semibold uppercase tracking-wide" style={{ fontSize: "10px" }}>DM gửi NV:</div>
+                      <div className="bg-green-50 border border-green-100 rounded-lg p-2 font-mono text-gray-600 whitespace-pre-wrap leading-relaxed">
+                        {`✅ Lead đã được phân chia cho bạn trên Getfly\n\n👤 Khách: Nguyễn Văn A\n📞 SĐT: 09******\n🏢 Dự án: ${projectName || "Dự án"}`}
+                      </div>
+                      <div className="text-gray-400 font-semibold uppercase tracking-wide" style={{ fontSize: "10px" }}>Thông báo nhóm Zalo:</div>
+                      <div className="bg-blue-50 border border-blue-100 rounded-lg p-2 font-mono text-gray-600 whitespace-pre-wrap leading-relaxed">
+                        {`📣 Lead đã được nhận!\n👤 Nhân viên: @${lead.acceptedBy.name}\n📞 Khách: Ng*** | 09***\n🏢 Dự án: ${projectName || "Dự án"}`}
+                      </div>
+                    </div>
+                  )}
+
+                  {lead.status === "no_response_all" && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-orange-600 font-semibold">
+                        <AlertTriangle className="w-4 h-4" />
+                        Tất cả không phản hồi — lead chưa được assign
+                      </div>
+                      <div className="text-orange-500 bg-orange-50 border border-orange-100 rounded p-2">
+                        Thực tế: lead vẫn tồn tại trên Getfly chưa được assign. State không thay đổi.
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-              {/* DM to employee */}
-              <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide">DM gửi NV:</div>
-              <div className="bg-green-50 border border-green-100 rounded-lg p-2.5 font-mono text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">
-                {`✅ Lead đã được phân chia cho bạn trên Getfly\n\n👤 Khách: Nguyễn Văn A\n📞 SĐT: 09******\n🏢 Dự án: ${projectName || "Dự án"}\n📝 Khách quan tâm dự án`}
-              </div>
-              {/* Group notification */}
-              <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Thông báo nhóm Zalo dự án:</div>
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-2.5 font-mono text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">
-                {`📣 Lead đã được nhận!\n👤 Nhân viên: @${activeLead.acceptedBy.name}\n📞 Khách: Ng*** | 09***\n🏢 Dự án: ${projectName || "Dự án"}`}
-              </div>
-              <button onClick={startLead}
-                className="w-full bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-                Lead tiếp theo
-              </button>
-            </div>
-          )}
+              ))}
 
-          {/* Result: nobody */}
-          {activeLead?.status === "no_response_all" && (
-            <div className="bg-white rounded-xl border border-orange-200 p-4 space-y-3">
-              <div className="flex items-center gap-2 text-orange-700 font-semibold">
-                <AlertTriangle className="w-5 h-5" />
-                Lead #{activeLead.id} — tất cả không phản hồi
-              </div>
-              <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                Đã ping hết tất cả nhóm:<br />
-                {activeLead.skipped.map((e, i) => (
-                  <span key={i}>{i > 0 && " → "}<span className="text-gray-400 line-through">{e.name}</span><span className="text-gray-300 text-xs ml-0.5">({e.groupName})</span></span>
-                ))}
-              </div>
-              <div className="text-xs text-orange-600 bg-orange-50 border border-orange-100 rounded p-2">
-                Thực tế: lead vẫn tồn tại trên Getfly chưa được assign.
-                State không thay đổi.
-              </div>
-              <button onClick={startLead}
-                className="w-full bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-                Lead tiếp theo
-              </button>
+              {/* Summary */}
+              {multiPending.length > 1 && multiPending.some((l) => l.status === "pinging") && (() => {
+                const pingingNames = multiPending.filter((l) => l.status === "pinging").map((l) => l.candidate?.name);
+                const hasDup = pingingNames.length !== new Set(pingingNames).size;
+                return (
+                  <div className={`text-xs rounded-lg px-3 py-2 font-semibold border ${hasDup ? "bg-red-50 text-red-600 border-red-200" : "bg-teal-50 text-teal-700 border-teal-200"}`}>
+                    {hasDup
+                      ? "⚠ Có NV đang bị ping cho 2 lead cùng lúc — lỗi!"
+                      : `✅ ${pingingNames.length} lead đang chờ — mỗi lead được ping một NV khác nhau`}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

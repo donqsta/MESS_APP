@@ -125,6 +125,9 @@ export default function DistributionPage() {
   const [zaloSearchPhone, setZaloSearchPhone] = useState("");
   const [zaloSearchName, setZaloSearchName] = useState("");
 
+  // Active page tab
+  const [activeTab, setActiveTab] = useState<"employees" | "groups" | "zalo" | "config">("employees");
+
   // Active project tab
   const [activeProject, setActiveProject] = useState<string | null>(null);
 
@@ -420,7 +423,6 @@ export default function DistributionPage() {
     const state = config.state[pid];
     if (!dist?.groups.length) return "Chưa cấu hình";
 
-    // Chọn nhóm theo weighted round-robin (giống getCandidates)
     const groupCounts = state?.groupCounts ?? {};
     let group = dist.groups[0];
     let bestRatio = Infinity;
@@ -444,6 +446,36 @@ export default function DistributionPage() {
     return `${group.name} → ${empName(best.employeeId)}`;
   }
 
+  /** Trả về { groupId, employeeId } của người sẽ nhận lead tiếp theo */
+  function getNextInfo(pid: string): { groupId: string; employeeId: string } | null {
+    if (!config) return null;
+    const dist = config.projects[pid];
+    const state = config.state[pid];
+    if (!dist?.groups.length) return null;
+
+    const groupCounts = state?.groupCounts ?? {};
+    let bestGroup = dist.groups[0];
+    let bestRatio = Infinity;
+    for (const g of dist.groups) {
+      const ratio = (groupCounts[g.id] ?? 0) / (g.weight ?? 1);
+      if (ratio < bestRatio) { bestRatio = ratio; bestGroup = g; }
+    }
+    if (!bestGroup?.members.length) return null;
+
+    const groupState = state?.groups[bestGroup.id] ?? { counts: {} };
+    const empMap = new Map(config.employees.map((e) => [e.id, e]));
+    const active = bestGroup.members.filter((m) => empMap.get(m.employeeId)?.active && m.weight > 0);
+    if (!active.length) return null;
+
+    let best = active[0];
+    let bestMemberRatio = (groupState.counts[best.employeeId] ?? 0) / best.weight;
+    for (const m of active.slice(1)) {
+      const r = (groupState.counts[m.employeeId] ?? 0) / m.weight;
+      if (r < bestMemberRatio) { bestMemberRatio = r; best = m; }
+    }
+    return { groupId: bestGroup.id, employeeId: best.employeeId };
+  }
+
   const filteredFollowers = zaloFollowers.filter((f) => {
     const nameMatch = !zaloSearchName || f.display_name.toLowerCase().includes(zaloSearchName.toLowerCase());
     return nameMatch;
@@ -461,6 +493,18 @@ export default function DistributionPage() {
 
   const pid = activeProject;
   const dist = pid ? getProjectDist(pid) : null;
+
+  // Tổng lead đã nhận theo employeeId — cộng qua tất cả dự án và nhóm
+  const empLeadTotals = new Map<string, number>();
+  if (config) {
+    for (const state of Object.values(config.state)) {
+      for (const groupState of Object.values(state.groups ?? {})) {
+        for (const [empId, count] of Object.entries(groupState.counts ?? {})) {
+          empLeadTotals.set(empId, (empLeadTotals.get(empId) ?? 0) + count);
+        }
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -490,10 +534,34 @@ export default function DistributionPage() {
         <h1 className="text-base font-semibold text-gray-800">Phân chia Lead</h1>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+      {/* Tab navigation */}
+      <div className="bg-white border-b border-gray-200 px-6">
+        <div className="max-w-5xl mx-auto flex gap-0">
+          {([
+            { id: "employees", label: "Nhân viên" },
+            { id: "groups",    label: "Cấu hình nhóm" },
+            { id: "zalo",      label: "Nhóm Zalo" },
+            { id: "config",    label: "Cấu hình Bot" },
+          ] as const).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                activeTab === tab.id
+                  ? "border-indigo-600 text-indigo-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-6">
 
         {/* ── Nhân viên ────────────────────────────────────────────────────── */}
-        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeTab === "employees" && <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <Users className="w-4 h-4 text-indigo-600" />
             <h2 className="font-semibold text-gray-800 text-sm">Danh sách nhân viên</h2>
@@ -686,6 +754,7 @@ export default function DistributionPage() {
             <div className="divide-y divide-gray-100">
               {config!.employees.map((emp) => {
                 const isEditing = editEmpId === emp.id;
+                const totalLeadCount = empLeadTotals.get(emp.id) ?? 0;
                 return (
                   <div key={emp.id}>
                     {/* Normal row */}
@@ -719,6 +788,16 @@ export default function DistributionPage() {
                             : <span className="text-orange-400"> · Chưa có Zalo ID</span>
                           }
                         </p>
+                      </div>
+
+                      {/* Tổng lead đã nhận */}
+                      <div className={`flex-shrink-0 text-center px-2.5 py-1 rounded-lg border ${
+                        totalLeadCount > 0
+                          ? "bg-indigo-50 border-indigo-100 text-indigo-700"
+                          : "bg-gray-50 border-gray-100 text-gray-400"
+                      }`}>
+                        <div className="text-sm font-bold leading-tight">{totalLeadCount}</div>
+                        <div className="text-[10px] leading-tight">lead</div>
                       </div>
 
                       {/* Ping test */}
@@ -910,10 +989,10 @@ export default function DistributionPage() {
               </div>
             </div>
           </div>
-        </section>
+        </section>}
 
         {/* ── Nhóm theo dự án ──────────────────────────────────────────────── */}
-        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeTab === "groups" && <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <Users className="w-4 h-4 text-teal-600" />
             <h2 className="font-semibold text-gray-800 text-sm">Cấu hình nhóm theo dự án</h2>
@@ -936,7 +1015,18 @@ export default function DistributionPage() {
             ))}
           </div>
 
-          {pid && dist && (
+          {pid && dist && (() => {
+            const projectState = config?.state[pid];
+            const totalLeads = Object.values(projectState?.groupCounts ?? {}).reduce((s, v) => s + v, 0);
+            const groupStats = dist.groups.map((g) => {
+              const count = projectState?.groupCounts?.[g.id] ?? 0;
+              const pct = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
+              return { ...g, count, pct };
+            });
+            const nextInfo = getNextInfo(pid);
+            const empMap = new Map((config?.employees ?? []).map((e) => [e.id, e]));
+
+            return (
             <div className="p-5 space-y-4">
               {/* Queue status */}
               <div className="flex items-center justify-between text-xs">
@@ -962,6 +1052,95 @@ export default function DistributionPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Stats: phân bổ nhóm + chi tiết NV */}
+              {dist.groups.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Phân bổ nhóm */}
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center justify-between">
+                      <span>Phân bổ nhóm</span>
+                      <span className="text-gray-400 font-normal normal-case">{totalLeads} lead đã nhận</span>
+                    </div>
+                    {totalLeads === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-2">Chưa có lead nào được phân bổ</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {groupStats.map((g) => {
+                          const diff = Math.abs(g.pct - g.weight);
+                          const ok = diff <= 5;
+                          return (
+                            <div key={g.id}>
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className="font-medium text-gray-700">{g.name}</span>
+                                <span>
+                                  <span className={ok ? "text-teal-600 font-semibold" : "text-red-500 font-bold"}>
+                                    {g.pct.toFixed(1)}%
+                                  </span>
+                                  <span className="text-gray-400"> / mục tiêu {g.weight}% ({g.count})</span>
+                                </span>
+                              </div>
+                              <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${ok ? "bg-teal-400" : "bg-red-400"}`}
+                                  style={{ width: `${Math.min(g.pct, 100)}%` }}
+                                />
+                                <div
+                                  className="absolute inset-y-0 w-0.5 bg-gray-500 opacity-30"
+                                  style={{ left: `${Math.min(g.weight, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Chi tiết NV */}
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      Chi tiết nhân viên
+                    </div>
+                    <div className="space-y-3">
+                      {dist.groups.map((g) => {
+                        const gs = projectState?.groups?.[g.id] ?? { counts: {} };
+                        const totalGroup = projectState?.groupCounts?.[g.id] ?? 0;
+                        return (
+                          <div key={g.id}>
+                            <div className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
+                              <span className="font-medium text-gray-600">{g.name}</span>
+                              <span className="text-gray-300">·</span>
+                              <span>mục tiêu {g.weight}%</span>
+                              {totalGroup > 0 && <span className="ml-auto text-gray-500">{totalGroup} lead</span>}
+                            </div>
+                            <div className="space-y-1">
+                              {g.members.map((m) => {
+                                const emp = empMap.get(m.employeeId);
+                                const count = gs.counts?.[m.employeeId] ?? 0;
+                                const isNext = nextInfo?.groupId === g.id && nextInfo?.employeeId === m.employeeId;
+                                return (
+                                  <div
+                                    key={m.employeeId}
+                                    className={`flex items-center gap-2 text-xs px-2 py-1 rounded-lg ${isNext ? "bg-teal-50 border border-teal-200" : "bg-white border border-gray-100"}`}
+                                  >
+                                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${emp?.active ? "bg-green-400" : "bg-gray-300"}`} />
+                                    <span className="flex-1 truncate text-gray-700">{emp?.name ?? m.employeeId}</span>
+                                    {!emp?.zaloId && <span className="text-orange-400 text-[10px]">no zalo</span>}
+                                    <span className="font-mono text-gray-500 w-10 text-right">{count} lead</span>
+                                    <span className="text-gray-300 text-[10px]">x{m.weight}</span>
+                                    {isNext && <span className="text-teal-600 font-semibold text-[10px]">← next</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Groups */}
               {dist.groups.length === 0 && (
@@ -1066,11 +1245,12 @@ export default function DistributionPage() {
                 Thêm nhóm
               </button>
             </div>
-          )}
-        </section>
+            );
+          })()}
+        </section>}
 
         {/* ── Nhóm Zalo theo dự án ─────────────────────────────────────────── */}
-        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeTab === "zalo" && <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <Bell className="w-4 h-4 text-teal-600" />
             <h2 className="font-semibold text-gray-800 text-sm">Nhóm Zalo thông báo theo dự án</h2>
@@ -1182,10 +1362,10 @@ export default function DistributionPage() {
               Thêm thủ công
             </button>
           </div>
-        </section>
+        </section>}
 
         {/* ── Hướng dẫn Zalo Bot ───────────────────────────────────────────── */}
-        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeTab === "config" && <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <Bell className="w-4 h-4 text-yellow-600" />
             <h2 className="font-semibold text-gray-800 text-sm">Cấu hình Zalo Bot</h2>
@@ -1212,7 +1392,7 @@ ZALO_BOT_SECRET=your_app_secret`}
               Nếu chưa cấu hình Zalo Bot, hệ thống sẽ tạo lead bình thường mà không check online hay gửi thông báo.
             </p>
           </div>
-        </section>
+        </section>}
       </div>
     </div>
   );
@@ -1227,39 +1407,4 @@ function normalizePhone(raw: string): string {
   return digits;
 }
 
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface Employee {
-  id: string;
-  name: string;
-  getflyUserId: number;
-  zaloId: string;
-  active: boolean;
-}
-
-interface GroupMember {
-  employeeId: string;
-  weight: number;
-}
-
-interface Group {
-  id: string;
-  name: string;
-  weight: number;
-  members: GroupMember[];
-}
-
-interface ProjectDistribution {
-  groups: Group[];
-}
-
-interface GroupState {
-  counts: Record<string, number>;
-}
-
-interface ProjectState {
-  groupCounts: Record<string, number>;
-  groups: Record<string, GroupState>;
-}
 
