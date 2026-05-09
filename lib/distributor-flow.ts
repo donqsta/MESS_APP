@@ -10,7 +10,7 @@
  *       d. Nếu tất cả offline → chỉ log, lead vẫn đã tồn tại trên Getfly
  */
 
-import { getCandidates, advanceState, Employee } from "./lead-distributor";
+import { getCandidates, advanceState, withProjectLock, markOffered, releaseOffer, Employee } from "./lead-distributor";
 import { pingEmployee, waitForOnline, notifyLeadAssigned, notifyGroupLeadAccepted } from "./zalo-bot";
 import { matchProject } from "./projectMatcher";
 import { assignGetflyAccountOwner } from "./getfly";
@@ -48,7 +48,8 @@ export async function distributeAfterCreate(details: LeadDetails): Promise<void>
     return;
   }
 
-  const candidates = getCandidates(projectId);
+  // Lấy candidates trong lock để tránh race condition khi nhiều lead vào cùng lúc
+  const candidates = await withProjectLock(String(projectId), async () => getCandidates(projectId));
   if (candidates.length === 0) {
     console.log(`[distributor] Không có nhân viên nào cho project=${projectId}`);
     return;
@@ -56,32 +57,51 @@ export async function distributeAfterCreate(details: LeadDetails): Promise<void>
 
   const leadSummary = `${details.name || "Khách"} | ${details.phone}${details.projectName ? ` | ${details.projectName}` : ""}\n${details.summary}`;
 
-  for (const employee of candidates) {
-    console.log(`[distributor] Ping ${employee.name} (zalo=${employee.zaloId}) cho project=${projectId}`);
+  // Dedup: mỗi NV chỉ được ping 1 lần dù xuất hiện ở nhiều nhóm
+  const pingedIds = new Set<string>();
 
-    const sent = await pingEmployee(employee, leadSummary);
-    if (!sent) {
-      console.log(`[distributor] Gửi ping thất bại cho ${employee.name}, thử người tiếp theo`);
+  for (const employee of candidates) {
+    if (pingedIds.has(employee.id)) {
+      console.log(`[distributor] Bỏ qua ${employee.name} — đã ping ở nhóm trước`);
       continue;
     }
+    pingedIds.add(employee.id);
 
-    const online = await waitForOnline(employee, ZALO_TIMEOUT_MS);
-    if (online) {
-      advanceState(projectId, employee.id);
-      console.log(`[distributor] ${employee.name} online → gán phụ trách + gửi chi tiết lead`);
-      // Gán người phụ trách trên Getfly CRM
-      if (details.getflyAccountId && employee.getflyUserId) {
-        await assignGetflyAccountOwner(details.getflyAccountId, employee.getflyUserId);
+    // Đánh dấu NV đang được ping — các lead khác sẽ bỏ qua người này
+    markOffered(String(projectId), employee.id);
+    console.log(`[distributor] Ping ${employee.name} (zalo=${employee.zaloId}) cho project=${projectId}`);
+
+    try {
+      const sent = await pingEmployee(employee, leadSummary);
+      if (!sent) {
+        releaseOffer(String(projectId), employee.id);
+        console.log(`[distributor] Gửi ping thất bại cho ${employee.name}, thử người tiếp theo`);
+        continue;
       }
-      // Thông báo chi tiết cho nhân viên (DM)
-      await notifyLeadAssigned(employee, details);
-      // Thông báo lên nhóm Zalo của dự án (nếu có)
-      const group = getGroupByProject(String(projectId));
-      if (group) {
-        await notifyGroupLeadAccepted(group.groupId, employee, details);
-        console.log(`[distributor] Đã thông báo nhóm "${group.groupName}" (${group.groupId})`);
+
+      const online = await waitForOnline(employee, ZALO_TIMEOUT_MS);
+      releaseOffer(String(projectId), employee.id);
+
+      if (online) {
+        await withProjectLock(String(projectId), async () => advanceState(projectId, employee.id));
+        console.log(`[distributor] ${employee.name} online → gán phụ trách + gửi chi tiết lead`);
+        // Gán người phụ trách trên Getfly CRM
+        if (details.getflyAccountId && employee.getflyUserId) {
+          await assignGetflyAccountOwner(details.getflyAccountId, employee.getflyUserId);
+        }
+        // Thông báo chi tiết cho nhân viên (DM)
+        await notifyLeadAssigned(employee, details);
+        // Thông báo lên nhóm Zalo của dự án (nếu có)
+        const group = getGroupByProject(String(projectId));
+        if (group) {
+          await notifyGroupLeadAccepted(group.groupId, employee, details);
+          console.log(`[distributor] Đã thông báo nhóm "${group.groupName}" (${group.groupId})`);
+        }
+        return;
       }
-      return;
+    } catch (e) {
+      releaseOffer(String(projectId), employee.id);
+      throw e;
     }
 
     console.log(`[distributor] ${employee.name} không phản hồi sau ${ZALO_TIMEOUT_MS / 1000}s`);
@@ -99,7 +119,11 @@ export async function assignLeadToEmployee(
   const candidates = getCandidates(projectId);
   if (candidates.length === 0) return null;
 
+  const pingedIds = new Set<string>();
   for (const employee of candidates) {
+    if (pingedIds.has(employee.id)) continue;
+    pingedIds.add(employee.id);
+
     const sent = await pingEmployee(employee, leadSummary);
     if (!sent) continue;
 

@@ -22,6 +22,18 @@ body {
   box-sizing: border-box;
 }
 
+/* Input text color — Tailwind Preflight strips browser defaults */
+input,
+textarea,
+select {
+  color: #111827; /* gray-900 */
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af; /* gray-400 */
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

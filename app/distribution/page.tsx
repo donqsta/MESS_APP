@@ -46,6 +46,7 @@ interface GroupMember {
 interface Group {
   id: string;
   name: string;
+  weight: number;
   members: GroupMember[];
 }
 
@@ -58,7 +59,7 @@ interface GroupState {
 }
 
 interface ProjectState {
-  groupIndex: number;
+  groupCounts: Record<string, number>;
   groups: Record<string, GroupState>;
 }
 
@@ -333,8 +334,15 @@ export default function DistributionPage() {
 
   function addGroup(pid: string) {
     const dist = getProjectDist(pid);
-    const newGroup: Group = { id: genId(), name: `Nhóm ${dist.groups.length + 1}`, members: [] };
+    const newGroup: Group = { id: genId(), name: `Nhóm ${dist.groups.length + 1}`, weight: 1, members: [] };
     updateProjectDist(pid, { groups: [...dist.groups, newGroup] });
+  }
+
+  function updateGroupWeight(pid: string, gid: string, weight: number) {
+    const dist = getProjectDist(pid);
+    updateProjectDist(pid, {
+      groups: dist.groups.map((g) => g.id === gid ? { ...g, weight: Math.max(1, weight) } : g),
+    });
   }
 
   function removeGroup(pid: string, gid: string) {
@@ -411,8 +419,15 @@ export default function DistributionPage() {
     const dist = config.projects[pid];
     const state = config.state[pid];
     if (!dist?.groups.length) return "Chưa cấu hình";
-    const gi = (state?.groupIndex ?? 0) % dist.groups.length;
-    const group = dist.groups[gi];
+
+    // Chọn nhóm theo weighted round-robin (giống getCandidates)
+    const groupCounts = state?.groupCounts ?? {};
+    let group = dist.groups[0];
+    let bestRatio = Infinity;
+    for (const g of dist.groups) {
+      const ratio = (groupCounts[g.id] ?? 0) / (g.weight ?? 1);
+      if (ratio < bestRatio) { bestRatio = ratio; group = g; }
+    }
     if (!group?.members.length) return "Nhóm trống";
 
     const groupState = state?.groups[group.id] ?? { counts: {} };
@@ -421,10 +436,10 @@ export default function DistributionPage() {
     if (!active.length) return "Không có NV active";
 
     let best = active[0];
-    let bestRatio = (groupState.counts[best.employeeId] ?? 0) / best.weight;
+    let bestMemberRatio = (groupState.counts[best.employeeId] ?? 0) / best.weight;
     for (const m of active.slice(1)) {
       const r = (groupState.counts[m.employeeId] ?? 0) / m.weight;
-      if (r < bestRatio) { bestRatio = r; best = m; }
+      if (r < bestMemberRatio) { bestMemberRatio = r; best = m; }
     }
     return `${group.name} → ${empName(best.employeeId)}`;
   }
@@ -967,6 +982,17 @@ export default function DistributionPage() {
                         onChange={(e) => updateGroupName(pid, group.id, e.target.value)}
                         className="flex-1 text-sm font-medium text-gray-800 bg-transparent outline-none border-b border-transparent focus:border-gray-300 transition-colors"
                       />
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-xs text-gray-400">Tỷ lệ:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={group.weight ?? 1}
+                          onChange={(e) => updateGroupWeight(pid, group.id, Number(e.target.value))}
+                          className="w-14 text-xs text-center border border-gray-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-teal-400"
+                        />
+                        <span className="text-xs text-gray-400">%</span>
+                      </div>
                       <button
                         onClick={() => removeGroup(pid, group.id)}
                         className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
@@ -1220,6 +1246,7 @@ interface GroupMember {
 interface Group {
   id: string;
   name: string;
+  weight: number;
   members: GroupMember[];
 }
 
@@ -1232,7 +1259,7 @@ interface GroupState {
 }
 
 interface ProjectState {
-  groupIndex: number;
+  groupCounts: Record<string, number>;
   groups: Record<string, GroupState>;
 }
 

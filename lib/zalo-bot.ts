@@ -147,14 +147,23 @@ export async function notifyLeadAssigned(
   employee: Employee,
   leadDetails: { name: string; phone: string; projectName?: string; summary: string }
 ): Promise<void> {
+  const maskedPhone = maskPhone(leadDetails.phone);
   const msg =
-    `✅ Lead đã được phân chia cho bạn!\n\n` +
+    `✅ Lead đã được phân chia cho bạn trên Getfly\n\n` +
     `👤 Khách: ${leadDetails.name}\n` +
-    `📞 SĐT: ${leadDetails.phone}\n` +
+    `📞 SĐT: ${maskedPhone}\n` +
     (leadDetails.projectName ? `🏢 Dự án: ${leadDetails.projectName}\n` : "") +
     `📝 ${leadDetails.summary}`;
 
   await sendZaloMessage(employee.zaloId, msg);
+}
+
+/** Giữ 2 ký tự đầu SĐT, che phần còn lại bằng ****** */
+function maskPhone(phone: string): string {
+  if (!phone) return "***";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length <= 2) return digits + "******";
+  return digits.slice(0, 2) + "*".repeat(Math.min(digits.length - 2, 6));
 }
 
 // ── Group message ──────────────────────────────────────────────────────────────

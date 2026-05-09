@@ -236,10 +236,167 @@
       "isAdmin": true
     }
   ],
-  "projects": {},
+  "projects": {
+    "1": {
+      "groups": [
+        {
+          "id": "rx4q6nmt",
+          "name": "Nhóm 1",
+          "weight": 30,
+          "members": [
+            {
+              "employeeId": "getfly_2",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_22",
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "id": "4fd3z8cy",
+          "name": "Nhóm 2",
+          "weight": 40,
+          "members": [
+            {
+              "employeeId": "getfly_8",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_9",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_11",
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "id": "gjau3fg6",
+          "name": "Nhóm 3",
+          "weight": 30,
+          "members": [
+            {
+              "employeeId": "getfly_13",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_14",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_15",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_18",
+              "weight": 1
+            }
+          ]
+        }
+      ]
+    },
+    "2": {
+      "groups": [
+        {
+          "id": "5devcqio",
+          "name": "Nhóm 1",
+          "weight": 20,
+          "members": [
+            {
+              "employeeId": "getfly_23",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_22",
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "id": "yf3115f2",
+          "name": "Nhóm 2",
+          "weight": 20,
+          "members": [
+            {
+              "employeeId": "getfly_8",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_3",
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "id": "3v7s2plm",
+          "name": "Nhóm 3",
+          "weight": 20,
+          "members": [
+            {
+              "employeeId": "getfly_9",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_10",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_12",
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "id": "eylr4spz",
+          "name": "Nhóm 4",
+          "weight": 20,
+          "members": [
+            {
+              "employeeId": "getfly_13",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_16",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_15",
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "id": "f6ljjuad",
+          "name": "Nhóm 5",
+          "weight": 20,
+          "members": [
+            {
+              "employeeId": "getfly_14",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_17",
+              "weight": 1
+            },
+            {
+              "employeeId": "getfly_21",
+              "weight": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
   "state": {
     "1": {
-      "groupIndex": 0,
+      "groupCounts": {},
+      "groups": {}
+    },
+    "2": {
+      "groupCounts": {},
       "groups": {}
     }
   }

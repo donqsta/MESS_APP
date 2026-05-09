@@ -34,6 +34,8 @@ export interface GroupMember {
 export interface Group {
   id: string;
   name: string;
+  /** Tỷ lệ % nhóm nhận lead so với các nhóm khác trong dự án (ví dụ: 30, 40, 60) */
+  weight: number;
   members: GroupMember[];
 }
 
@@ -46,7 +48,8 @@ interface GroupState {
 }
 
 interface ProjectState {
-  groupIndex: number; // nhóm hiện tại (round-robin)
+  /** số lead đã nhận theo groupId — dùng cho weighted round-robin giữa các nhóm */
+  groupCounts: Record<string, number>;
   groups: Record<string, GroupState>; // groupId → state
 }
 
@@ -85,6 +88,62 @@ export function saveConfig(config: DistributionConfig): void {
 
 function emptyConfig(): DistributionConfig {
   return { employees: [], projects: {}, state: {} };
+}
+
+// ── Active offers (ngăn ping 2 lead cho cùng 1 NV) ───────────────────────────
+
+/**
+ * Theo dõi NV đang được ping cho 1 lead khác — in-process, reset khi restart.
+ * getCandidates sẽ bỏ qua NV này, tránh 2 lead cùng ping 1 người.
+ */
+const activeOffers = new Map<string, Set<string>>(); // projectId → Set<employeeId>
+
+export function markOffered(projectId: string, employeeId: string): void {
+  const pid = String(projectId);
+  if (!activeOffers.has(pid)) activeOffers.set(pid, new Set());
+  activeOffers.get(pid)!.add(employeeId);
+}
+
+export function releaseOffer(projectId: string, employeeId: string): void {
+  activeOffers.get(String(projectId))?.delete(employeeId);
+}
+
+export function getActiveOffers(projectId: string): Set<string> {
+  return activeOffers.get(String(projectId)) ?? new Set();
+}
+
+/**
+ * Số NV đang được ping (offered) theo groupId.
+ * Dùng để điều chỉnh ratio chọn nhóm khi nhiều lead vào cùng lúc,
+ * tránh pile-up vào cùng 1 nhóm trước khi ai accept.
+ */
+export function getGroupPendingCounts(
+  projectId: string,
+  groups: Group[]
+): Record<string, number> {
+  const offered = getActiveOffers(projectId);
+  const result: Record<string, number> = {};
+  for (const g of groups) {
+    result[g.id] = g.members.filter((m) => offered.has(m.employeeId)).length;
+  }
+  return result;
+}
+
+// ── In-process mutex (ngăn race condition khi nhiều lead vào cùng lúc) ────────
+
+/**
+ * Hàng đợi promise per-project. Mỗi advanceState phải chờ lần trước hoàn tất
+ * trước khi đọc + ghi state, đảm bảo thứ tự chính xác.
+ */
+const projectLocks = new Map<string, Promise<void>>();
+
+export function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = projectLocks.get(projectId) ?? Promise.resolve();
+  let resolveLock!: () => void;
+  const lockPromise = new Promise<void>((r) => { resolveLock = r; });
+  projectLocks.set(projectId, lockPromise);
+
+  return prev.then(() => fn()).finally(() => resolveLock());
 }
 
 // ── Employee lookup ───────────────────────────────────────────────────────────
@@ -139,8 +198,9 @@ function pickFromGroup(
  * Trả về danh sách nhân viên theo thứ tự ưu tiên cho projectId.
  * Dùng để thử lần lượt khi check online.
  *
- * Trả về: [employee được chọn trước, các employee còn lại trong nhóm, ...]
- * Không thay đổi state — state chỉ được cập nhật sau khi assign thành công.
+ * - Nhóm được sắp xếp theo weighted RR (nhóm ưu tiên cao nhất trước).
+ * - Nếu tất cả NV trong nhóm không phản hồi, tự động thử nhóm kế tiếp.
+ * - Không thay đổi state — state chỉ cập nhật sau khi assign thành công.
  */
 export function getCandidates(projectId: string | number): Employee[] {
   const config = loadConfig();
@@ -148,39 +208,51 @@ export function getCandidates(projectId: string | number): Employee[] {
   const projectDist = config.projects[pid];
   if (!projectDist || projectDist.groups.length === 0) return [];
 
-  const projectState = config.state[pid] ?? {
-    groupIndex: 0,
-    groups: {},
-  };
-
-  const groups = projectDist.groups;
-  const groupIndex = projectState.groupIndex % groups.length;
-  const group = groups[groupIndex];
-  if (!group) return [];
-
-  const groupState: GroupState = projectState.groups[group.id] ?? { counts: {} };
+  const projectState = config.state[pid] ?? { groupCounts: {}, groups: {} };
+  const groupCounts = projectState.groupCounts ?? {};
   const empMap = new Map(config.employees.map((e) => [e.id, e]));
+  const offered = getActiveOffers(pid);
 
-  // Sắp xếp active members theo count/weight ratio tăng dần
-  const activeMembers = group.members
-    .filter((m) => {
+  // Cộng thêm số NV đang được ping vào count để tránh pile-up khi nhiều lead vào cùng lúc
+  const pendingCounts = getGroupPendingCounts(pid, projectDist.groups);
+
+  // Sắp xếp nhóm theo weighted RR ratio tăng dần (ưu tiên nhất trước)
+  const sortedGroups = [...projectDist.groups].sort((a, b) => {
+    const ra = ((groupCounts[a.id] ?? 0) + (pendingCounts[a.id] ?? 0)) / (a.weight ?? 1);
+    const rb = ((groupCounts[b.id] ?? 0) + (pendingCounts[b.id] ?? 0)) / (b.weight ?? 1);
+    return ra - rb;
+  });
+
+  const result: Employee[] = [];
+  for (const group of sortedGroups) {
+    const groupState: GroupState = projectState.groups[group.id] ?? { counts: {} };
+
+    // Sắp xếp NV trong nhóm theo count/weight ratio tăng dần
+    const activeMembers = group.members
+      .filter((m) => {
+        const emp = empMap.get(m.employeeId);
+        // Bỏ qua NV đang được ping cho lead khác
+        return emp?.active && m.weight > 0 && !offered.has(m.employeeId);
+      })
+      .sort((a, b) => {
+        const ra = (groupState.counts[a.employeeId] ?? 0) / a.weight;
+        const rb = (groupState.counts[b.employeeId] ?? 0) / b.weight;
+        return ra - rb;
+      });
+
+    for (const m of activeMembers) {
       const emp = empMap.get(m.employeeId);
-      return emp?.active && m.weight > 0;
-    })
-    .sort((a, b) => {
-      const ratioA = (groupState.counts[a.employeeId] ?? 0) / a.weight;
-      const ratioB = (groupState.counts[b.employeeId] ?? 0) / b.weight;
-      return ratioA - ratioB;
-    });
+      if (emp) result.push(emp);
+    }
+  }
 
-  return activeMembers
-    .map((m) => empMap.get(m.employeeId))
-    .filter((e): e is Employee => !!e);
+  return result;
 }
 
 /**
  * Cập nhật state sau khi lead được assign thành công cho employee.
- * Tăng count của employee, advance group index nếu cần.
+ * Tìm nhóm chứa employee (không re-run weighted RR) để xử lý đúng
+ * khi employee đến từ nhóm fallback (nhóm 1 không phản hồi → nhóm 2 nhận).
  */
 export function advanceState(projectId: string | number, employeeId: string): void {
   const config = loadConfig();
@@ -189,27 +261,30 @@ export function advanceState(projectId: string | number, employeeId: string): vo
   if (!projectDist) return;
 
   if (!config.state[pid]) {
-    config.state[pid] = { groupIndex: 0, groups: {} };
+    config.state[pid] = { groupCounts: {}, groups: {} };
   }
   const projectState = config.state[pid];
-  const groups = projectDist.groups;
-  const groupIndex = projectState.groupIndex % groups.length;
-  const group = groups[groupIndex];
+
+  // Tìm nhóm chứa employee này
+  const group = projectDist.groups.find((g) =>
+    g.members.some((m) => m.employeeId === employeeId)
+  );
   if (!group) return;
 
+  // Tăng count nhóm
+  if (!projectState.groupCounts) projectState.groupCounts = {};
+  projectState.groupCounts[group.id] = (projectState.groupCounts[group.id] ?? 0) + 1;
+
+  // Tăng count nhân viên trong nhóm
   if (!projectState.groups[group.id]) {
     projectState.groups[group.id] = { counts: {} };
   }
   const groupState = projectState.groups[group.id];
   groupState.counts[employeeId] = (groupState.counts[employeeId] ?? 0) + 1;
 
-  // Kiểm tra xem đã "hoàn thành vòng" trong nhóm này chưa
-  // → advance group sau mỗi lần assign (round-robin giữa các nhóm)
-  projectState.groupIndex = (groupIndex + 1) % groups.length;
-
   saveConfig(config);
   console.log(
-    `[lead-distributor] Assigned: project=${pid} group=${group.name} employee=${employeeId} count=${groupState.counts[employeeId]}`
+    `[lead-distributor] Assigned: project=${pid} group=${group.name}(w=${group.weight ?? 1}) employee=${employeeId} groupCount=${projectState.groupCounts[group.id]} memberCount=${groupState.counts[employeeId]}`
   );
 }
 
@@ -246,13 +321,13 @@ export function setProjectDistribution(
   const pid = String(projectId);
   config.projects[pid] = dist;
   // Reset state cho project này
-  config.state[pid] = { groupIndex: 0, groups: {} };
+  config.state[pid] = { groupCounts: {}, groups: {} };
   saveConfig(config);
 }
 
 export function resetProjectState(projectId: string | number): void {
   const config = loadConfig();
   const pid = String(projectId);
-  config.state[pid] = { groupIndex: 0, groups: {} };
+  config.state[pid] = { groupCounts: {}, groups: {} };
   saveConfig(config);
 }
