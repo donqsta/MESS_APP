@@ -7,7 +7,7 @@ import { PageToken } from "@/lib/session";
  */
 export function getPagesFromEnv(): PageToken[] {
   const pages: PageToken[] = [];
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 50; i++) {
     const token = process.env[`PAGE_TOKEN_${i}`]?.trim();
     const id = process.env[`PAGE_ID_${i}`]?.trim();
     const name = process.env[`PAGE_NAME_${i}`]?.trim();
