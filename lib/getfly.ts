@@ -148,7 +148,8 @@ export async function detectProject(
   messageText: string,
   referral: AdReferral | undefined,
   pageId: string,
-  pageToken?: string
+  pageToken?: string,
+  pageName?: string
 ): Promise<number[]> {
   // Ưu tiên 1: Từ khóa / AI trong tin nhắn
   const fromMsg = await matchProject(messageText);
@@ -171,6 +172,12 @@ export async function detectProject(
         return [fromComment];
       }
     }
+  }
+
+  // Ưu tiên 2.8: Thử match theo tên page
+  if (pageName) {
+    const fromPageName = await matchProject(pageName);
+    if (fromPageName) return [fromPageName];
   }
 
   // Ưu tiên 3: Fallback theo fanpage (đọc từ pageIds trong projects.json)
@@ -394,10 +401,10 @@ export async function createGetflyLead(input: GetflyLeadInput): Promise<GetflyLe
     if (fromUrl) {
       projectIds = [fromUrl];
     } else {
-      projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken);
+      projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken, input.pageName);
     }
   } else {
-    projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken);
+    projectIds = await detectProject(input.messageText, input.referral, input.pageId, input.pageToken, input.pageName);
   }
 
   // Tên nguồn:
