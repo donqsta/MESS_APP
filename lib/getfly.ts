@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { AdReferral } from "@/lib/webhook-store";
-import { getPostFirstComment } from "@/lib/facebook";
+import { getPostFirstComment, getFBPostContent } from "@/lib/facebook";
 import { matchProject, matchByKeyword, getProjectForPage } from "@/lib/projectMatcher";
 
 const GETFLY_BASE_URL = process.env.GETFLY_BASE_URL ?? "";
@@ -160,6 +160,18 @@ export async function detectProject(
     const adText = [referral.ad_title, referral.ref].filter(Boolean).join(" ");
     const fromAd = await matchProject(adText);
     if (fromAd) return [fromAd];
+  }
+
+  // Ưu tiên 2.3: Đọc nội dung bài viết / bài quảng cáo Facebook (Post text / Ad creative body)
+  if (referral && (referral.post_id || referral.ad_id) && pageToken) {
+    const postContent = await getFBPostContent({ post_id: referral.post_id, ad_id: referral.ad_id }, pageToken);
+    if (postContent) {
+      const fromPostText = await matchProject(postContent);
+      if (fromPostText) {
+        console.log(`[Getfly] Phát hiện dự án từ nội dung bài viết quảng cáo (post_id=${referral.post_id || referral.ad_id}): ${fromPostText}`);
+        return [fromPostText];
+      }
+    }
   }
 
   // Ưu tiên 2.5: Đọc bình luận đầu tiên (comment gim) của bài đăng quảng cáo

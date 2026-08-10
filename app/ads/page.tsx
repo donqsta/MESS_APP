@@ -18,6 +18,8 @@ interface AdLead {
     photo_url?: string;
     video_url?: string;
     post_id?: string;
+    post_text?: string;
+    detected_project_name?: string;
   };
   firstMessageText: string;
   timestamp: number;
@@ -102,12 +104,19 @@ export default function AdsPage() {
                   )}
 
                   <div className="flex-1 min-w-0">
-                    {/* Ad title */}
+                    {/* Ad title & detected project */}
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div>
-                        <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium mb-1">
-                          <Megaphone className="w-3 h-3" /> Từ quảng cáo
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                            <Megaphone className="w-3 h-3" /> Từ quảng cáo
+                          </span>
+                          {lead.referral.detected_project_name && (
+                            <span className="inline-flex items-center gap-1 text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold border border-emerald-200">
+                              Dự án: {lead.referral.detected_project_name}
+                            </span>
+                          )}
+                        </div>
                         <p className="font-semibold text-gray-800">
                           {lead.referral.ad_title ?? "Quảng cáo không có tiêu đề"}
                         </p>
@@ -116,6 +125,14 @@ export default function AdsPage() {
                         {new Date(lead.timestamp).toLocaleString("vi-VN")}
                       </span>
                     </div>
+
+                    {/* Post Ads Text (Nội dung bài viết quảng cáo) */}
+                    {lead.referral.post_text && (
+                      <div className="mb-2 bg-blue-50/70 border border-blue-100 rounded-lg p-2 text-xs text-gray-700">
+                        <span className="font-semibold text-blue-800 block mb-0.5">Nội dung bài quảng cáo:</span>
+                        <p className="line-clamp-3 whitespace-pre-wrap text-gray-600">{lead.referral.post_text}</p>
+                      </div>
+                    )}
 
                     {/* First message */}
                     <div className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2 mb-3">

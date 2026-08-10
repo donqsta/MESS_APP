@@ -40,6 +40,7 @@ export async function GET() {
       id: p.id,
       name: p.name,
       keywords: p.keywords,
+      adKeywords: p.adKeywords ?? [],
       domains: p.domains,
       pageIds: p.pageIds ?? [],
     })),
@@ -48,14 +49,15 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const body = await req.json() as { id: number; keywords: string[]; domains: string[]; pageIds?: string[] };
+    const body = await req.json() as { id: number; keywords: string[]; adKeywords?: string[]; domains: string[]; pageIds?: string[] };
     if (typeof body.id !== "number") {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
     await updateProject(body.id, {
-      keywords: Array.isArray(body.keywords) ? body.keywords.map(String).filter(Boolean) : undefined,
-      domains:  Array.isArray(body.domains)  ? body.domains.map(String).filter(Boolean)  : undefined,
-      pageIds:  Array.isArray(body.pageIds)  ? body.pageIds.map(String).filter(Boolean)   : undefined,
+      keywords:   Array.isArray(body.keywords)   ? body.keywords.map(String).filter(Boolean)   : undefined,
+      adKeywords: Array.isArray(body.adKeywords) ? body.adKeywords.map(String).filter(Boolean) : undefined,
+      domains:    Array.isArray(body.domains)    ? body.domains.map(String).filter(Boolean)    : undefined,
+      pageIds:    Array.isArray(body.pageIds)    ? body.pageIds.map(String).filter(Boolean)    : undefined,
     });
     return NextResponse.json({ success: true });
   } catch (err) {

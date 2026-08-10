@@ -2,7 +2,7 @@ import { getSession } from "@/lib/session";
 import { getPagesFromEnv } from "@/lib/pages";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { MessageSquare, Building2, LogOut, Settings, Globe, Users } from "lucide-react";
+import { MessageSquare, Building2, LogOut, Settings, Globe, Users, Megaphone } from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -22,6 +22,13 @@ export default async function DashboardPage() {
           <span className="font-bold text-lg">Mess App</span>
         </div>
         <div className="flex items-center gap-4">
+          <Link
+            href="/ads"
+            className="flex items-center gap-1.5 text-sm text-orange-300 hover:text-white transition-colors"
+          >
+            <Megaphone className="w-4 h-4" />
+            Quảng cáo Ads
+          </Link>
           <Link
             href="/settings"
             className="flex items-center gap-1.5 text-sm text-blue-200 hover:text-white transition-colors"

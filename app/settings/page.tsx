@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Bot, ChevronLeft, RotateCcw, Zap, MessageSquare, RefreshCw, ChevronDown, ChevronUp, Check, X } from "lucide-react";
+import { Bot, ChevronLeft, RotateCcw, Zap, MessageSquare, RefreshCw, ChevronDown, ChevronUp, Check, X, Megaphone, Search } from "lucide-react";
 import Link from "next/link";
 
 interface BotSettings {
@@ -12,6 +12,7 @@ interface ProjectEntry {
   id: number;
   name: string;
   keywords: string[];
+  adKeywords?: string[];
   domains: string[];
   pageIds: string[];
 }
@@ -63,9 +64,46 @@ export default function SettingsPage() {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [editState, setEditState] = useState<Record<number, { keywords: string[]; domains: string[]; pageIds: string[] }>>({});
+  const [editState, setEditState] = useState<Record<number, { keywords: string[]; adKeywords?: string[]; domains: string[]; pageIds: string[] }>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
+
+  // Post Ads Tester state
+  const [testPostText, setTestPostText] = useState("");
+  const [testPostId, setTestPostId] = useState("");
+  const [testAdId, setTestAdId] = useState("");
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    source?: string;
+    extractedPostText?: string;
+    detectedProjectId?: number;
+    detectedProjectName?: string;
+    matchedKeywords?: string[];
+    error?: string;
+  } | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+
+  async function handleTestPostDetect() {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/debug/detect-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postText: testPostText || undefined,
+          postId: testPostId || undefined,
+          adId: testAdId || undefined,
+        }),
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ success: false, error: String(err) });
+    } finally {
+      setTestLoading(false);
+    }
+  }
 
   const loadProjects = useCallback(() => {
     fetch("/api/bot/sync-projects")
@@ -140,7 +178,15 @@ export default function SettingsPage() {
       setExpandedId(id);
       // seed edit state with current values if not already editing
       if (!editState[id]) {
-        setEditState((prev) => ({ ...prev, [id]: { keywords: [...p.keywords], domains: [...p.domains], pageIds: [...(p.pageIds ?? [])] } }));
+        setEditState((prev) => ({
+          ...prev,
+          [id]: {
+            keywords: [...p.keywords],
+            adKeywords: [...(p.adKeywords ?? [])],
+            domains: [...p.domains],
+            pageIds: [...(p.pageIds ?? [])],
+          },
+        }));
       }
     }
   }
@@ -153,7 +199,13 @@ export default function SettingsPage() {
       const res = await fetch("/api/bot/sync-projects", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, keywords: patch.keywords, domains: patch.domains, pageIds: patch.pageIds }),
+        body: JSON.stringify({
+          id,
+          keywords: patch.keywords,
+          adKeywords: patch.adKeywords,
+          domains: patch.domains,
+          pageIds: patch.pageIds,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -284,7 +336,12 @@ export default function SettingsPage() {
           <div className="divide-y divide-gray-100">
             {projects.map((p) => {
               const isExpanded = expandedId === p.id;
-              const edit = editState[p.id] ?? { keywords: p.keywords, domains: p.domains };
+              const edit = editState[p.id] ?? {
+                keywords: p.keywords,
+                adKeywords: p.adKeywords ?? [],
+                domains: p.domains,
+                pageIds: p.pageIds ?? [],
+              };
               const isSaving = savingId === p.id;
               const isSaved  = savedId  === p.id;
 
@@ -297,7 +354,7 @@ export default function SettingsPage() {
                   >
                     <span className="text-xs text-gray-400 w-6 shrink-0">#{p.id}</span>
                     <span className="text-sm font-medium text-gray-800 flex-1">{p.name}</span>
-                    {p.keywords.length === 0 && p.id !== 41 && (
+                    {p.keywords.length === 0 && (p.adKeywords ?? []).length === 0 && p.id !== 41 && (
                       <span className="text-xs text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded">no keywords</span>
                     )}
                     {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />}
@@ -308,12 +365,24 @@ export default function SettingsPage() {
                     <div className="px-5 pb-4 bg-gray-50 border-t border-gray-100 space-y-3">
                       <div className="pt-3">
                         <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Keywords <span className="text-gray-400 font-normal">(Enter hoặc dấu , để thêm)</span>
+                          Keywords tin nhắn <span className="text-gray-400 font-normal">(từ khóa xuất hiện trong chat)</span>
                         </label>
                         <TagInput
                           value={edit.keywords}
                           onChange={(v) => setEditState((prev) => ({ ...prev, [p.id]: { ...edit, keywords: v } }))}
                           placeholder="vd: springville, spring ville..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-orange-800 mb-1 font-semibold flex items-center gap-1">
+                          <Megaphone className="w-3 h-3 text-orange-600" />
+                          Từ khóa Ads <span className="text-gray-500 font-normal">(xuất hiện trong bài viết / tiêu đề quảng cáo Facebook)</span>
+                        </label>
+                        <TagInput
+                          value={edit.adKeywords ?? []}
+                          onChange={(v) => setEditState((prev) => ({ ...prev, [p.id]: { ...edit, adKeywords: v } }))}
+                          placeholder="vd: imperia ads, khuyen mai grand marina, mkt_oceanpark..."
                         />
                       </div>
 
@@ -350,7 +419,15 @@ export default function SettingsPage() {
                         </button>
                         <button
                           onClick={() => {
-                            setEditState((prev) => ({ ...prev, [p.id]: { keywords: [...p.keywords], domains: [...p.domains], pageIds: [...(p.pageIds ?? [])] } }));
+                            setEditState((prev) => ({
+                              ...prev,
+                              [p.id]: {
+                                keywords: [...p.keywords],
+                                adKeywords: [...(p.adKeywords ?? [])],
+                                domains: [...p.domains],
+                                pageIds: [...(p.pageIds ?? [])],
+                              },
+                            }));
                           }}
                           className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5"
                         >
@@ -362,6 +439,100 @@ export default function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* Thử nghiệm Post Ads Text Detection */}
+        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-orange-600" />
+              <h2 className="font-semibold text-gray-800 text-sm">Thử nghiệm Detect Bài viết Quảng cáo (Facebook Post Ads)</h2>
+            </div>
+            <Link href="/ads" className="text-xs text-orange-600 hover:underline flex items-center gap-1">
+              <Megaphone className="w-3 h-3" /> Danh sách Ads Leads →
+            </Link>
+          </div>
+
+          <div className="p-5 space-y-4">
+            <p className="text-xs text-gray-500">
+              Nhập <strong>Post ID</strong> / <strong>Ad ID</strong> (để tự động gọi Facebook Graph API) hoặc dán trực tiếp <strong>Nội dung bài quảng cáo</strong> để thử nghiệm công cụ nhận diện dự án BĐS quan tâm.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Post ID (Ví dụ: 123456789_987654321)</label>
+                <input
+                  type="text"
+                  value={testPostId}
+                  onChange={(e) => setTestPostId(e.target.value)}
+                  placeholder="Nhập Post ID Facebook..."
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Ad ID (Ví dụ: 2385123456789)</label>
+                <input
+                  type="text"
+                  value={testAdId}
+                  onChange={(e) => setTestAdId(e.target.value)}
+                  placeholder="Nhập Ad ID Facebook..."
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Hoặc dán trực tiếp nội dung bài viết quảng cáo (Post Text)</label>
+              <textarea
+                rows={3}
+                value={testPostText}
+                onChange={(e) => setTestPostText(e.target.value)}
+                placeholder="Ví dụ: Mở bán căn hộ Imperia Smart City chiết khấu 10%, bàn giao full nội thất..."
+                className="w-full text-xs border border-gray-200 rounded-lg p-3 outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleTestPostDetect}
+                disabled={testLoading || (!testPostText && !testPostId && !testAdId)}
+                className="flex items-center gap-1.5 text-xs bg-orange-600 text-white font-medium hover:bg-orange-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Search className="w-3.5 h-3.5" />
+                {testLoading ? "Đang phân tích..." : "Kiểm tra Detect Dự án"}
+              </button>
+            </div>
+
+            {testResult && (
+              <div className={`mt-3 p-4 rounded-xl border text-xs ${testResult.success ? "bg-emerald-50/70 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-800"}`}>
+                {testResult.success ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="font-semibold text-emerald-800">Kết quả nhận diện dự án:</span>
+                      <span className="bg-emerald-200 text-emerald-900 px-2.5 py-0.5 rounded-full font-bold">
+                        {testResult.detectedProjectName ? `Dự án: ${testResult.detectedProjectName} (ID ${testResult.detectedProjectId})` : "Chưa xác định dự án"}
+                      </span>
+                    </div>
+                    {testResult.extractedPostText && (
+                      <div>
+                        <span className="font-medium text-emerald-700">Văn bản bài viết quảng cáo trích xuất:</span>
+                        <p className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 text-gray-700 mt-1 line-clamp-4 whitespace-pre-wrap">
+                          {testResult.extractedPostText}
+                        </p>
+                      </div>
+                    )}
+                    {testResult.matchedKeywords && testResult.matchedKeywords.length > 0 && (
+                      <div>
+                        <span className="font-medium text-emerald-700">Từ khóa gợi ý/khớp:</span> {testResult.matchedKeywords.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p>Lỗi: {testResult.error}</p>
+                )}
+              </div>
+            )}
           </div>
         </section>
 

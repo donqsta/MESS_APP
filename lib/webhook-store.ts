@@ -15,6 +15,8 @@ export interface AdReferral {
   photo_url?: string;
   video_url?: string;
   post_id?: string;
+  post_text?: string;
+  detected_project_name?: string;
 }
 
 export interface WebhookMessage {

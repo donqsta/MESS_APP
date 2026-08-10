@@ -19,6 +19,7 @@ export interface ProjectEntry {
   id: number;
   name: string;
   keywords: string[];
+  adKeywords?: string[]; // Từ khóa xuất hiện trong bài viết/tiêu đề quảng cáo Facebook
   domains: string[];
   pageIds?: string[];   // Fanpage IDs mặc định → dự án này (fallback khi không match keyword)
 }
@@ -103,6 +104,11 @@ export function matchByKeyword(text: string): number | null {
     for (const kw of project.keywords) {
       if (needle.includes(kw.toLowerCase())) return project.id;
     }
+    if (project.adKeywords) {
+      for (const akw of project.adKeywords) {
+        if (needle.includes(akw.toLowerCase())) return project.id;
+      }
+    }
     for (const domain of project.domains) {
       if (needle.includes(domain.toLowerCase())) return project.id;
     }
@@ -181,16 +187,17 @@ export function getProjectForPage(pageId: string): number {
 
 export function updateProject(
   id: number,
-  patch: Partial<Pick<ProjectEntry, "keywords" | "domains" | "name" | "pageIds">>
+  patch: Partial<Pick<ProjectEntry, "keywords" | "adKeywords" | "domains" | "name" | "pageIds">>
 ): void {
   const config = loadConfig();
   const project = config.projects.find((p) => p.id === id);
   if (!project) throw new Error(`Không tìm thấy project ID ${id}`);
 
-  if (patch.name     !== undefined) project.name     = patch.name;
-  if (patch.keywords !== undefined) project.keywords = patch.keywords;
-  if (patch.domains  !== undefined) project.domains  = patch.domains;
-  if (patch.pageIds  !== undefined) project.pageIds  = patch.pageIds;
+  if (patch.name       !== undefined) project.name       = patch.name;
+  if (patch.keywords   !== undefined) project.keywords   = patch.keywords;
+  if (patch.adKeywords !== undefined) project.adKeywords = patch.adKeywords;
+  if (patch.domains    !== undefined) project.domains    = patch.domains;
+  if (patch.pageIds    !== undefined) project.pageIds    = patch.pageIds;
 
   writeConfig(config);
   global.__projectConfig = undefined; // reset cache

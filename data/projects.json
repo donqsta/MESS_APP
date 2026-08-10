@@ -228,6 +228,84 @@
         "duanpicitycentralpark",
         "canhopicitycentralpark"
       ]
+    },
+    {
+      "id": 45,
+      "name": "Green Skyline",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 46,
+      "name": "Phúc An City",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 47,
+      "name": "The Agula",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 48,
+      "name": "Urban Green",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 49,
+      "name": "Vinhomes Saigon Park",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 50,
+      "name": "Ứng viên",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 51,
+      "name": "68 Bình Chánh",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 52,
+      "name": "A&T",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 53,
+      "name": "Phúc Yên Prosper Phố Đông",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 54,
+      "name": "Tuyển dụng",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 55,
+      "name": "KCN TATP",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 56,
+      "name": "Norton Park",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 57,
+      "name": "Nguyễn Văn Bứa",
+      "keywords": [],
+      "domains": []
     }
   ]
 }

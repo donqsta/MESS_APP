@@ -237,6 +237,116 @@ export async function getPostFirstComment(
 }
 
 /**
+ * Lấy nội dung văn bản (caption/message/story/description) của một bài đăng Facebook.
+ */
+export async function getPostText(
+  postId: string,
+  pageToken: string
+): Promise<string | null> {
+  const cached = postCommentCache.get(`post_text:${postId}`);
+  if (cached && Date.now() - cached.fetchedAt < COMMENT_CACHE_TTL_MS) {
+    return cached.text;
+  }
+
+  try {
+    const data = await fbFetch<{
+      message?: string;
+      story?: string;
+      description?: string;
+      caption?: string;
+    }>(`/${postId}`, pageToken, {
+      fields: "message,story,description,caption",
+    });
+
+    const textParts = [data.message, data.story, data.description, data.caption]
+      .filter((t): t is string => Boolean(t && t.trim()))
+      .join(" ");
+
+    const postText = textParts.trim() || null;
+    if (postText) {
+      postCommentCache.set(`post_text:${postId}`, { text: postText, fetchedAt: Date.now() });
+      console.log(`[Facebook] Đã lấy nội dung post_id=${postId} (${postText.length} kí tự)`);
+    }
+    return postText;
+  } catch (err) {
+    console.warn(`[Facebook] Không đọc được nội dung post_id=${postId}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Lấy nội dung quảng cáo từ ad_id (Facebook Ad Creative).
+ */
+export async function getAdText(
+  adId: string,
+  pageToken: string
+): Promise<string | null> {
+  const cached = postCommentCache.get(`ad_text:${adId}`);
+  if (cached && Date.now() - cached.fetchedAt < COMMENT_CACHE_TTL_MS) {
+    return cached.text;
+  }
+
+  try {
+    const data = await fbFetch<{
+      name?: string;
+      creative?: {
+        body?: string;
+        title?: string;
+        object_story_id?: string;
+        effective_object_story_id?: string;
+      };
+    }>(`/${adId}`, pageToken, {
+      fields: "name,creative{body,title,object_story_id,effective_object_story_id}",
+    });
+
+    const creative = data.creative;
+    const storyId = creative?.effective_object_story_id || creative?.object_story_id;
+    if (storyId) {
+      const storyText = await getPostText(storyId, pageToken);
+      if (storyText) {
+        postCommentCache.set(`ad_text:${adId}`, { text: storyText, fetchedAt: Date.now() });
+        return storyText;
+      }
+    }
+
+    const textParts = [creative?.title, creative?.body, data.name]
+      .filter((t): t is string => Boolean(t && t.trim()))
+      .join(" ");
+
+    const adText = textParts.trim() || null;
+    if (adText) {
+      postCommentCache.set(`ad_text:${adId}`, { text: adText, fetchedAt: Date.now() });
+      console.log(`[Facebook] Đã lấy nội dung ad_id=${adId} (${adText.length} kí tự)`);
+    }
+    return adText;
+  } catch (err) {
+    console.warn(`[Facebook] Không đọc được nội dung ad_id=${adId}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Lấy nội dung văn bản quảng cáo tổng hợp từ referral (ưu tiên post_id, sau đó ad_id).
+ */
+export async function getFBPostContent(
+  referral: { post_id?: string; ad_id?: string },
+  pageToken: string
+): Promise<string | null> {
+  if (referral.post_id) {
+    const postText = await getPostText(referral.post_id, pageToken);
+    if (postText) return postText;
+  }
+
+  if (referral.ad_id) {
+    const adText = await getAdText(referral.ad_id, pageToken);
+    if (adText) return adText;
+  }
+
+  return null;
+}
+
+
+/**
  * Gửi tin nhắn văn bản đến user trong hội thoại.
  */
 export async function sendMessage(

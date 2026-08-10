@@ -287,9 +287,22 @@ export default function MessageThread({ conversationId, pageId, pageScoped, init
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-orange-800 font-semibold mb-0.5">
-                Đến từ quảng cáo: {initialAdLead.referral.ad_title ?? "Không có tiêu đề"}
-              </p>
+              <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                <p className="text-orange-800 font-semibold">
+                  Đến từ quảng cáo: {initialAdLead.referral.ad_title ?? "Không có tiêu đề"}
+                </p>
+                {initialAdLead.referral.detected_project_name && (
+                  <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-medium border border-emerald-200">
+                    Dự án: {initialAdLead.referral.detected_project_name}
+                  </span>
+                )}
+              </div>
+              {initialAdLead.referral.post_text && (
+                <p className="text-xs text-orange-900/80 bg-orange-100/60 rounded px-2 py-1 my-1 line-clamp-2">
+                  <span className="font-semibold">Nội dung quảng cáo: </span>
+                  {initialAdLead.referral.post_text}
+                </p>
+              )}
               <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-orange-600/80">
                 {initialAdLead.referral.ad_id && (
                   <span>Ad ID: {initialAdLead.referral.ad_id}</span>

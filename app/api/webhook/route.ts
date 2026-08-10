@@ -6,7 +6,8 @@ import { extractPhoneNumbers, createGetflyLead } from "@/lib/getfly";
 import { getPageFromEnv } from "@/lib/pages";
 import { handleBotMessage } from "@/lib/ai-bot/botHandler";
 import { getConversationIdBySender, getConversation, registerSenderMapping, ensureConversation } from "@/lib/ai-bot/botMemory";
-import { getSenderProfile } from "@/lib/facebook";
+import { getSenderProfile, getFBPostContent } from "@/lib/facebook";
+import { matchProject, getProjects } from "@/lib/projectMatcher";
 import { startProactiveChecker } from "@/lib/ai-bot/proactiveChecker";
 import { addLeadUserMessage, getLeadUserMessages } from "@/lib/lead-context-store";
 // distributeAfterCreate: phân bổ lead kích hoạt qua Getfly webhook (/api/getfly-webhook)
@@ -90,14 +91,32 @@ export async function POST(req: NextRequest) {
         publish({ pageId, senderId, text, mid, timestamp, referral });
         addLeadUserMessage(pageId, senderId, text, timestamp);
 
-        // Nếu từ quảng cáo → ghi vào ad-store
+        const page = getPageFromEnv(pageId);
+
+        // Nếu từ quảng cáo → ghi vào ad-store & thử trích xuất bài viết quảng cáo
         if (referral?.source === "ADS") {
           recordAdLead({ senderId, pageId, referral, firstMessageText: text, timestamp });
+
+          if (page?.accessToken && (referral.post_id || referral.ad_id)) {
+            const activeRef = referral;
+            getFBPostContent({ post_id: activeRef.post_id, ad_id: activeRef.ad_id }, page.accessToken)
+              .then(async (postContent) => {
+                if (postContent) {
+                  activeRef.post_text = postContent;
+                  const matchedId = await matchProject(postContent);
+                  if (matchedId) {
+                    const proj = getProjects().find((p) => p.id === matchedId);
+                    if (proj) activeRef.detected_project_name = proj.name;
+                  }
+                  recordAdLead({ senderId, pageId, referral: activeRef, firstMessageText: text, timestamp });
+                }
+              })
+              .catch((err) => console.warn("[Webhook] Trích xuất post text quảng cáo lỗi:", err));
+          }
         }
 
         // Phát hiện SĐT → tạo lead trên Getfly CRM
         const phones = await extractPhoneNumbers(text);
-        const page = getPageFromEnv(pageId);
 
         if (phones.length > 0) {
           // Tìm thêm dữ liệu ads referral từ store (kể cả tin nhắn trước đó)
