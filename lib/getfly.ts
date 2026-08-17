@@ -164,7 +164,7 @@ export async function detectProject(
 
   // Ưu tiên 2.3: Đọc nội dung bài viết / bài quảng cáo Facebook (Post text / Ad creative body)
   if (referral && (referral.post_id || referral.ad_id) && pageToken) {
-    const postContent = await getFBPostContent({ post_id: referral.post_id, ad_id: referral.ad_id }, pageToken);
+    const postContent = await getFBPostContent({ post_id: referral.post_id, ad_id: referral.ad_id }, pageToken, pageId);
     if (postContent) {
       const fromPostText = await matchProject(postContent);
       if (fromPostText) {
@@ -176,7 +176,7 @@ export async function detectProject(
 
   // Ưu tiên 2.5: Đọc bình luận đầu tiên (comment gim) của bài đăng quảng cáo
   if (referral?.post_id && pageToken) {
-    const firstComment = await getPostFirstComment(referral.post_id, pageToken);
+    const firstComment = await getPostFirstComment(referral.post_id, pageToken, pageId);
     if (firstComment) {
       const fromComment = await matchProject(firstComment);
       if (fromComment) {

@@ -208,70 +208,103 @@ const COMMENT_CACHE_TTL_MS = 10 * 60 * 1000; // 10 phút
  */
 export async function getPostFirstComment(
   postId: string,
-  pageToken: string
+  pageToken: string,
+  pageId?: string
 ): Promise<string | null> {
-  const cached = postCommentCache.get(postId);
+  const cacheKey = `comment:${pageId ? `${pageId}_` : ""}${postId}`;
+  const cached = postCommentCache.get(cacheKey) ?? postCommentCache.get(postId);
   if (cached && Date.now() - cached.fetchedAt < COMMENT_CACHE_TTL_MS) {
     return cached.text;
   }
 
-  try {
-    const data = await fbFetch<{
-      data: Array<{ message: string }>;
-    }>(`/${postId}/comments`, pageToken, {
-      filter: "stream",
-      order: "ranked",
-      limit: "3",
-      fields: "message",
-    });
-
-    const firstComment = data.data?.[0]?.message ?? null;
-    if (firstComment) {
-      postCommentCache.set(postId, { text: firstComment, fetchedAt: Date.now() });
-    }
-    return firstComment;
-  } catch (err) {
-    console.warn("[Facebook] Không đọc được comment của post", postId, err instanceof Error ? err.message : err);
-    return null;
+  const candidateIds: string[] = [];
+  if (!postId.includes("_") && pageId) {
+    candidateIds.push(`${pageId}_${postId}`);
   }
+  candidateIds.push(postId);
+
+  for (const id of candidateIds) {
+    try {
+      const data = await fbFetch<{
+        data: Array<{ message: string }>;
+      }>(`/${id}/comments`, pageToken, {
+        filter: "stream",
+        order: "ranked",
+        limit: "3",
+        fields: "message",
+      });
+
+      const firstComment = data.data?.[0]?.message ?? null;
+      if (firstComment) {
+        postCommentCache.set(cacheKey, { text: firstComment, fetchedAt: Date.now() });
+        postCommentCache.set(postId, { text: firstComment, fetchedAt: Date.now() });
+        return firstComment;
+      }
+    } catch {
+      // Thử tiếp ID tiếp theo nếu có
+    }
+  }
+
+  console.warn("[Facebook] Không đọc được comment của post", postId);
+  return null;
 }
 
 /**
- * Lấy nội dung văn bản (caption/message/story/description) của một bài đăng Facebook.
+ * Lấy nội dung văn bản (caption/message/story/description/name) của một bài đăng Facebook.
+ * Tự động ghép pageId_${postId} nếu postId đơn lẻ để tránh lỗi FB Graph API (#12 singular statuses API is deprecated).
  */
 export async function getPostText(
   postId: string,
-  pageToken: string
+  pageToken: string,
+  pageId?: string
 ): Promise<string | null> {
-  const cached = postCommentCache.get(`post_text:${postId}`);
+  const cacheKey = `post_text:${pageId ? `${pageId}_` : ""}${postId}`;
+  const cached = postCommentCache.get(cacheKey) ?? postCommentCache.get(`post_text:${postId}`);
   if (cached && Date.now() - cached.fetchedAt < COMMENT_CACHE_TTL_MS) {
     return cached.text;
   }
 
-  try {
-    const data = await fbFetch<{
-      message?: string;
-      story?: string;
-      description?: string;
-      caption?: string;
-    }>(`/${postId}`, pageToken, {
-      fields: "message,story,description,caption",
-    });
-
-    const textParts = [data.message, data.story, data.description, data.caption]
-      .filter((t): t is string => Boolean(t && t.trim()))
-      .join(" ");
-
-    const postText = textParts.trim() || null;
-    if (postText) {
-      postCommentCache.set(`post_text:${postId}`, { text: postText, fetchedAt: Date.now() });
-      console.log(`[Facebook] Đã lấy nội dung post_id=${postId} (${postText.length} kí tự)`);
-    }
-    return postText;
-  } catch (err) {
-    console.warn(`[Facebook] Không đọc được nội dung post_id=${postId}:`, err instanceof Error ? err.message : err);
-    return null;
+  const candidateIds: string[] = [];
+  if (!postId.includes("_") && pageId) {
+    candidateIds.push(`${pageId}_${postId}`);
   }
+  candidateIds.push(postId);
+
+  let lastError: unknown = null;
+
+  for (const id of candidateIds) {
+    try {
+      const data = await fbFetch<{
+        message?: string;
+        story?: string;
+        description?: string;
+        caption?: string;
+        name?: string;
+      }>(`/${id}`, pageToken, {
+        fields: "message,story,description,caption,name",
+      });
+
+      const textParts = [data.message, data.story, data.description, data.caption, data.name]
+        .filter((t): t is string => Boolean(t && t.trim()))
+        .join(" ");
+
+      const postText = textParts.trim() || null;
+      if (postText) {
+        postCommentCache.set(cacheKey, { text: postText, fetchedAt: Date.now() });
+        postCommentCache.set(`post_text:${postId}`, { text: postText, fetchedAt: Date.now() });
+        console.log(`[Facebook] Đã lấy nội dung bài viết (id=${id}, ${postText.length} kí tự): ${postText.slice(0, 100)}...`);
+        return postText;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  console.warn(
+    `[Facebook] Không đọc được nội dung post_id=${postId}${pageId ? ` (pageId=${pageId})` : ""}:`,
+    lastError instanceof Error ? lastError.message : lastError
+  );
+  return null;
 }
 
 /**
@@ -330,10 +363,11 @@ export async function getAdText(
  */
 export async function getFBPostContent(
   referral: { post_id?: string; ad_id?: string },
-  pageToken: string
+  pageToken: string,
+  pageId?: string
 ): Promise<string | null> {
   if (referral.post_id) {
-    const postText = await getPostText(referral.post_id, pageToken);
+    const postText = await getPostText(referral.post_id, pageToken, pageId);
     if (postText) return postText;
   }
 

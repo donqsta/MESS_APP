@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       }
 
       source = postId ? `facebook_post:${postId}` : `facebook_ad:${adId}`;
-      const fetched = await getFBPostContent({ post_id: postId, ad_id: adId }, pageToken);
+      const fetched = await getFBPostContent({ post_id: postId, ad_id: adId }, pageToken, pageId);
       if (fetched) {
         textToAnalyze = fetched;
       }

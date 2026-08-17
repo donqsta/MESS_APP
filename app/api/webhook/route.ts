@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
 
           if (page?.accessToken && (referral.post_id || referral.ad_id)) {
             const activeRef = referral;
-            getFBPostContent({ post_id: activeRef.post_id, ad_id: activeRef.ad_id }, page.accessToken)
+            getFBPostContent({ post_id: activeRef.post_id, ad_id: activeRef.ad_id }, page.accessToken, pageId)
               .then(async (postContent) => {
                 if (postContent) {
                   activeRef.post_text = postContent;
