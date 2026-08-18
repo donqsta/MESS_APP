@@ -220,8 +220,9 @@ export async function getPostFirstComment(
   const candidateIds: string[] = [];
   if (!postId.includes("_") && pageId) {
     candidateIds.push(`${pageId}_${postId}`);
+  } else {
+    candidateIds.push(postId);
   }
-  candidateIds.push(postId);
 
   for (const id of candidateIds) {
     try {
@@ -245,18 +246,49 @@ export async function getPostFirstComment(
     }
   }
 
-  console.warn("[Facebook] Không đọc được comment của post", postId);
   return null;
 }
 
 /**
- * Lấy nội dung văn bản (caption/message/story/description/name) của một bài đăng Facebook.
- * Tự động ghép pageId_${postId} nếu postId đơn lẻ để tránh lỗi FB Graph API (#12 singular statuses API is deprecated).
+ * Lấy caption từ Photo ID của Facebook (nếu bài quảng cáo là một Photo).
+ */
+export async function getPhotoText(
+  photoId: string,
+  pageToken: string
+): Promise<string | null> {
+  try {
+    const data = await fbFetch<{ name?: string }>(`/${photoId}`, pageToken, {
+      fields: "name",
+    });
+    const text = data.name?.trim() || null;
+    if (text) {
+      console.log(`[Facebook] Đã lấy caption từ photo_id=${photoId} (${text.length} kí tự): ${text.slice(0, 100)}...`);
+    }
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Trích xuất photo_id từ URL ảnh Facebook CDN.
+ * Ví dụ URL: .../770183013_1494693706030690_1095200386841518000_n.jpg -> 1494693706030690
+ */
+export function extractPhotoIdFromUrl(photoUrl?: string): string | null {
+  if (!photoUrl) return null;
+  const match = photoUrl.match(/_(\d{10,20})_\d+_[a-z0-9]+\.jpg/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Lấy nội dung văn bản (message/story/attachments/photo caption) của một bài đăng Facebook.
+ * Sử dụng trường hợp lệ trên Graph API v20+ và hỗ trợ fallback Photo Caption.
  */
 export async function getPostText(
   postId: string,
   pageToken: string,
-  pageId?: string
+  pageId?: string,
+  photoUrl?: string
 ): Promise<string | null> {
   const cacheKey = `post_text:${pageId ? `${pageId}_` : ""}${postId}`;
   const cached = postCommentCache.get(cacheKey) ?? postCommentCache.get(`post_text:${postId}`);
@@ -264,40 +296,52 @@ export async function getPostText(
     return cached.text;
   }
 
-  const candidateIds: string[] = [];
-  if (!postId.includes("_") && pageId) {
-    candidateIds.push(`${pageId}_${postId}`);
-  }
-  candidateIds.push(postId);
-
+  // 1. Thử đọc Post Object: {pageId}_{postId}
+  const formattedPostId = !postId.includes("_") && pageId ? `${pageId}_${postId}` : postId;
   let lastError: unknown = null;
 
-  for (const id of candidateIds) {
-    try {
-      const data = await fbFetch<{
-        message?: string;
-        story?: string;
-        description?: string;
-        caption?: string;
-        name?: string;
-      }>(`/${id}`, pageToken, {
-        fields: "message,story,description,caption,name",
-      });
+  try {
+    const data = await fbFetch<{
+      message?: string;
+      story?: string;
+      attachments?: {
+        data?: Array<{ title?: string; description?: string }>;
+      };
+    }>(`/${formattedPostId}`, pageToken, {
+      fields: "message,story,attachments{title,description}",
+    });
 
-      const textParts = [data.message, data.story, data.description, data.caption, data.name]
-        .filter((t): t is string => Boolean(t && t.trim()))
-        .join(" ");
+    const attachmentTexts = data.attachments?.data?.map((a) => [a.title, a.description]).flat() || [];
+    const textParts = [data.message, data.story, ...attachmentTexts]
+      .filter((t): t is string => Boolean(t && t.trim()))
+      .join(" ");
 
-      const postText = textParts.trim() || null;
-      if (postText) {
-        postCommentCache.set(cacheKey, { text: postText, fetchedAt: Date.now() });
-        postCommentCache.set(`post_text:${postId}`, { text: postText, fetchedAt: Date.now() });
-        console.log(`[Facebook] Đã lấy nội dung bài viết (id=${id}, ${postText.length} kí tự): ${postText.slice(0, 100)}...`);
-        return postText;
-      }
-    } catch (err) {
-      lastError = err;
+    const postText = textParts.trim() || null;
+    if (postText) {
+      postCommentCache.set(cacheKey, { text: postText, fetchedAt: Date.now() });
+      postCommentCache.set(`post_text:${postId}`, { text: postText, fetchedAt: Date.now() });
+      console.log(`[Facebook] Đã lấy nội dung post_id=${formattedPostId} (${postText.length} kí tự): ${postText.slice(0, 100)}...`);
+      return postText;
     }
+  } catch (err) {
+    lastError = err;
+  }
+
+  // 2. Thử đọc Photo Caption từ photo_url (nếu có)
+  const extractedPhotoId = extractPhotoIdFromUrl(photoUrl);
+  if (extractedPhotoId) {
+    const photoText = await getPhotoText(extractedPhotoId, pageToken);
+    if (photoText) {
+      postCommentCache.set(cacheKey, { text: photoText, fetchedAt: Date.now() });
+      return photoText;
+    }
+  }
+
+  // 3. Thử đọc trực tiếp postId như một Photo Object (nếu postId là ID của ảnh)
+  const directPhotoText = await getPhotoText(postId, pageToken);
+  if (directPhotoText) {
+    postCommentCache.set(cacheKey, { text: directPhotoText, fetchedAt: Date.now() });
+    return directPhotoText;
   }
 
   console.warn(
@@ -359,16 +403,24 @@ export async function getAdText(
 }
 
 /**
- * Lấy nội dung văn bản quảng cáo tổng hợp từ referral (ưu tiên post_id, sau đó ad_id).
+ * Lấy nội dung văn bản quảng cáo tổng hợp từ referral (ưu tiên post_id, sau đó photo_url, sau đó ad_id).
  */
 export async function getFBPostContent(
-  referral: { post_id?: string; ad_id?: string },
+  referral: { post_id?: string; ad_id?: string; photo_url?: string },
   pageToken: string,
   pageId?: string
 ): Promise<string | null> {
   if (referral.post_id) {
-    const postText = await getPostText(referral.post_id, pageToken, pageId);
+    const postText = await getPostText(referral.post_id, pageToken, pageId, referral.photo_url);
     if (postText) return postText;
+  }
+
+  if (referral.photo_url) {
+    const photoId = extractPhotoIdFromUrl(referral.photo_url);
+    if (photoId) {
+      const photoText = await getPhotoText(photoId, pageToken);
+      if (photoText) return photoText;
+    }
   }
 
   if (referral.ad_id) {

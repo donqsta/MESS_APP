@@ -22,6 +22,8 @@ export interface ProjectEntry {
   adKeywords?: string[]; // Từ khóa xuất hiện trong bài viết/tiêu đề quảng cáo Facebook
   domains: string[];
   pageIds?: string[];   // Fanpage IDs mặc định → dự án này (fallback khi không match keyword)
+  postIds?: string[];   // Post IDs Facebook Ads trực tiếp cho dự án này
+  adIds?: string[];     // Ad IDs Facebook trực tiếp cho dự án này
 }
 
 interface ProjectConfig {
@@ -86,6 +88,45 @@ export function getProjects(): ProjectEntry[] {
 
 export function getFallbackId(): number {
   return loadConfig().fallbackId ?? 41;
+}
+
+// ── Step 0: Post ID / Ad ID direct match ──────────────────────────────────────
+
+/**
+ * Khớp dự án trực tiếp bằng Post ID hoặc Ad ID đã được cấu hình trong projects.json.
+ * Ưu tiên cao nhất khi xử lý lead từ quảng cáo Facebook (Click-to-Messenger Ads).
+ */
+export function matchByPostOrAdId(postId?: string, adId?: string): number | null {
+  if (!postId && !adId) return null;
+  const config = loadConfig();
+
+  for (const project of config.projects) {
+    if (project.id === config.fallbackId) continue;
+
+    // Khớp theo postIds cấu hình
+    if (postId && project.postIds && project.postIds.length > 0) {
+      for (const pid of project.postIds) {
+        const cleanPid = pid.trim();
+        if (cleanPid && (cleanPid === postId || postId.endsWith(cleanPid) || cleanPid.endsWith(postId))) {
+          console.log(`[ProjectMatcher] Khớp dự án "${project.name}" (ID ${project.id}) qua post_id=${postId}`);
+          return project.id;
+        }
+      }
+    }
+
+    // Khớp theo adIds cấu hình
+    if (adId && project.adIds && project.adIds.length > 0) {
+      for (const aid of project.adIds) {
+        const cleanAid = aid.trim();
+        if (cleanAid && cleanAid === adId) {
+          console.log(`[ProjectMatcher] Khớp dự án "${project.name}" (ID ${project.id}) qua ad_id=${adId}`);
+          return project.id;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 // ── Step 1: Keyword / domain match ───────────────────────────────────────────
@@ -187,7 +228,7 @@ export function getProjectForPage(pageId: string): number {
 
 export function updateProject(
   id: number,
-  patch: Partial<Pick<ProjectEntry, "keywords" | "adKeywords" | "domains" | "name" | "pageIds">>
+  patch: Partial<Pick<ProjectEntry, "keywords" | "adKeywords" | "domains" | "name" | "pageIds" | "postIds" | "adIds">>
 ): void {
   const config = loadConfig();
   const project = config.projects.find((p) => p.id === id);
@@ -198,6 +239,8 @@ export function updateProject(
   if (patch.adKeywords !== undefined) project.adKeywords = patch.adKeywords;
   if (patch.domains    !== undefined) project.domains    = patch.domains;
   if (patch.pageIds    !== undefined) project.pageIds    = patch.pageIds;
+  if (patch.postIds    !== undefined) project.postIds    = patch.postIds;
+  if (patch.adIds      !== undefined) project.adIds      = patch.adIds;
 
   writeConfig(config);
   global.__projectConfig = undefined; // reset cache

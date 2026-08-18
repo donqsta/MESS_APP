@@ -187,7 +187,6 @@
       "pageIds": [
         "1584010335165016",
         "1807504546139538",
-        "245115559231275",
         "729397667519994"
       ]
     },
@@ -227,6 +226,125 @@
         "picitycentralpark",
         "duanpicitycentralpark",
         "canhopicitycentralpark"
+      ]
+    },
+    {
+      "id": 45,
+      "name": "Green Skyline",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 46,
+      "name": "Phúc An City",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 47,
+      "name": "The Agula",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 48,
+      "name": "Urban Green",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 49,
+      "name": "Vinhomes Saigon Park",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 50,
+      "name": "Ứng viên",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 51,
+      "name": "68 Bình Chánh",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 52,
+      "name": "A&T",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 53,
+      "name": "Phúc Yên Prosper Phố Đông",
+      "keywords": [
+        "phúc yên",
+        "phuc yen",
+        "prosper",
+        "phố đông",
+        "pho dong"
+      ],
+      "domains": [],
+      "pageIds": [
+        "245115559231275"
+      ],
+      "postIds": [
+        "1452478640252197"
+      ],
+      "adIds": [
+        "120253269532840204"
+      ]
+    },
+    {
+      "id": 54,
+      "name": "Tuyển dụng",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 55,
+      "name": "KCN TATP",
+      "keywords": [
+        "kcn tatp",
+        "tatp",
+        "trần anh tân phú",
+        "tran anh tan phu",
+        "kcn trần anh"
+      ],
+      "domains": [],
+      "pageIds": [
+        "119579356538569"
+      ],
+      "postIds": [
+        "1616213960509971"
+      ],
+      "adIds": [
+        "52561601589905"
+      ]
+    },
+    {
+      "id": 56,
+      "name": "Norton Park",
+      "keywords": [],
+      "domains": []
+    },
+    {
+      "id": 57,
+      "name": "Nguyễn Văn Bứa",
+      "keywords": [
+        "nguyễn văn bứa",
+        "nguyen van bua",
+        "nguyen-van-bua"
+      ],
+      "domains": [],
+      "postIds": [
+        "1494693932697334"
+      ],
+      "adIds": [
+        "120249764571160673",
+        "120249900030260673"
       ]
     }
   ]

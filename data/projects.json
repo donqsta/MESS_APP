@@ -187,7 +187,6 @@
       "pageIds": [
         "1584010335165016",
         "1807504546139538",
-        "245115559231275",
         "729397667519994"
       ]
     },
@@ -280,8 +279,23 @@
     {
       "id": 53,
       "name": "Phúc Yên Prosper Phố Đông",
-      "keywords": [],
-      "domains": []
+      "keywords": [
+        "phúc yên",
+        "phuc yen",
+        "prosper",
+        "phố đông",
+        "pho dong"
+      ],
+      "domains": [],
+      "pageIds": [
+        "245115559231275"
+      ],
+      "postIds": [
+        "1452478640252197"
+      ],
+      "adIds": [
+        "120253269532840204"
+      ]
     },
     {
       "id": 54,
@@ -292,8 +306,23 @@
     {
       "id": 55,
       "name": "KCN TATP",
-      "keywords": [],
-      "domains": []
+      "keywords": [
+        "kcn tatp",
+        "tatp",
+        "trần anh tân phú",
+        "tran anh tan phu",
+        "kcn trần anh"
+      ],
+      "domains": [],
+      "pageIds": [
+        "119579356538569"
+      ],
+      "postIds": [
+        "1616213960509971"
+      ],
+      "adIds": [
+        "52561601589905"
+      ]
     },
     {
       "id": 56,
@@ -304,8 +333,19 @@
     {
       "id": 57,
       "name": "Nguyễn Văn Bứa",
-      "keywords": [],
-      "domains": []
+      "keywords": [
+        "nguyễn văn bứa",
+        "nguyen van bua",
+        "nguyen-van-bua"
+      ],
+      "domains": [],
+      "postIds": [
+        "1494693932697334"
+      ],
+      "adIds": [
+        "120249764571160673",
+        "120249900030260673"
+      ]
     }
   ]
 }

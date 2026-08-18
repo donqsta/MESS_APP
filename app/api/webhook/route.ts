@@ -7,7 +7,7 @@ import { getPageFromEnv } from "@/lib/pages";
 import { handleBotMessage } from "@/lib/ai-bot/botHandler";
 import { getConversationIdBySender, getConversation, registerSenderMapping, ensureConversation } from "@/lib/ai-bot/botMemory";
 import { getSenderProfile, getFBPostContent } from "@/lib/facebook";
-import { matchProject, getProjects } from "@/lib/projectMatcher";
+import { matchProject, matchByPostOrAdId, getProjects } from "@/lib/projectMatcher";
 import { startProactiveChecker } from "@/lib/ai-bot/proactiveChecker";
 import { addLeadUserMessage, getLeadUserMessages } from "@/lib/lead-context-store";
 // distributeAfterCreate: phân bổ lead kích hoạt qua Getfly webhook (/api/getfly-webhook)
@@ -95,23 +95,38 @@ export async function POST(req: NextRequest) {
 
         // Nếu từ quảng cáo → ghi vào ad-store & thử trích xuất bài viết quảng cáo
         if (referral?.source === "ADS") {
-          recordAdLead({ senderId, pageId, referral, firstMessageText: text, timestamp });
+          const activeRef = referral;
 
-          if (page?.accessToken && (referral.post_id || referral.ad_id)) {
-            const activeRef = referral;
-            getFBPostContent({ post_id: activeRef.post_id, ad_id: activeRef.ad_id }, page.accessToken, pageId)
-              .then(async (postContent) => {
-                if (postContent) {
-                  activeRef.post_text = postContent;
-                  const matchedId = await matchProject(postContent);
-                  if (matchedId) {
-                    const proj = getProjects().find((p) => p.id === matchedId);
-                    if (proj) activeRef.detected_project_name = proj.name;
+          // 1. Kiểm tra khớp trực tiếp Post ID hoặc Ad ID đã cấu hình
+          const directMatchedId = matchByPostOrAdId(activeRef.post_id, activeRef.ad_id);
+          if (directMatchedId) {
+            const proj = getProjects().find((p) => p.id === directMatchedId);
+            if (proj) activeRef.detected_project_name = proj.name;
+            console.log(`[Webhook] Phát hiện dự án "${activeRef.detected_project_name}" trực tiếp từ cấu hình post_id/ad_id`);
+            recordAdLead({ senderId, pageId, referral: activeRef, firstMessageText: text, timestamp });
+          } else {
+            recordAdLead({ senderId, pageId, referral: activeRef, firstMessageText: text, timestamp });
+
+            // 2. Nếu chưa cấu hình direct -> trích xuất nội dung bài viết qua Graph API / Photo Caption
+            if (page?.accessToken && (activeRef.post_id || activeRef.ad_id || activeRef.photo_url)) {
+              getFBPostContent(
+                { post_id: activeRef.post_id, ad_id: activeRef.ad_id, photo_url: activeRef.photo_url },
+                page.accessToken,
+                pageId
+              )
+                .then(async (postContent) => {
+                  if (postContent) {
+                    activeRef.post_text = postContent;
+                    const matchedId = await matchProject(postContent);
+                    if (matchedId) {
+                      const proj = getProjects().find((p) => p.id === matchedId);
+                      if (proj) activeRef.detected_project_name = proj.name;
+                    }
+                    recordAdLead({ senderId, pageId, referral: activeRef, firstMessageText: text, timestamp });
                   }
-                  recordAdLead({ senderId, pageId, referral: activeRef, firstMessageText: text, timestamp });
-                }
-              })
-              .catch((err) => console.warn("[Webhook] Trích xuất post text quảng cáo lỗi:", err));
+                })
+                .catch((err) => console.warn("[Webhook] Trích xuất post text quảng cáo lỗi:", err));
+            }
           }
         }
 

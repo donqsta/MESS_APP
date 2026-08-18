@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFBPostContent } from "@/lib/facebook";
-import { matchProject, getProjects } from "@/lib/projectMatcher";
+import { matchProject, matchByPostOrAdId, getProjects } from "@/lib/projectMatcher";
 import { getPageFromEnv } from "@/lib/pages";
 
 export async function POST(req: NextRequest) {
@@ -12,6 +12,21 @@ export async function POST(req: NextRequest) {
       postText?: string;
       pageId?: string;
     };
+
+    // 1. Kiểm tra trực tiếp cấu hình Post ID / Ad ID
+    const directMatchedId = matchByPostOrAdId(postId, adId);
+    if (directMatchedId) {
+      const projects = getProjects();
+      const matchedProject = projects.find((p) => p.id === directMatchedId);
+      return NextResponse.json({
+        success: true,
+        source: postId ? `configured_post_id:${postId}` : `configured_ad_id:${adId}`,
+        extractedPostText: `[Đã cấu hình sẵn] Khớp trực tiếp dự án "${matchedProject?.name}" qua ${postId ? `Post ID ${postId}` : `Ad ID ${adId}`}`,
+        detectedProjectId: directMatchedId,
+        detectedProjectName: matchedProject?.name ?? null,
+        matchedKeywords: matchedProject?.keywords ?? [],
+      });
+    }
 
     let textToAnalyze = postText?.trim() ?? "";
     let source = "direct_input";

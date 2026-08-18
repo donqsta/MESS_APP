@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { AdReferral } from "@/lib/webhook-store";
 import { getPostFirstComment, getFBPostContent } from "@/lib/facebook";
-import { matchProject, matchByKeyword, getProjectForPage } from "@/lib/projectMatcher";
+import { matchProject, matchByKeyword, matchByPostOrAdId, getProjectForPage } from "@/lib/projectMatcher";
 
 const GETFLY_BASE_URL = process.env.GETFLY_BASE_URL ?? "";
 const GETFLY_API_KEY = process.env.GETFLY_API_KEY ?? "";
@@ -151,6 +151,15 @@ export async function detectProject(
   pageToken?: string,
   pageName?: string
 ): Promise<number[]> {
+  // Ưu tiên 0: Khớp trực tiếp Post ID hoặc Ad ID được cấu hình trong Cài đặt Dự án Getfly
+  if (referral && (referral.post_id || referral.ad_id)) {
+    const fromDirectId = matchByPostOrAdId(referral.post_id, referral.ad_id);
+    if (fromDirectId) {
+      console.log(`[Getfly] Phát hiện dự án qua cấu hình trực tiếp post_id=${referral.post_id || ""} / ad_id=${referral.ad_id || ""} → Project ID: ${fromDirectId}`);
+      return [fromDirectId];
+    }
+  }
+
   // Ưu tiên 1: Từ khóa / AI trong tin nhắn
   const fromMsg = await matchProject(messageText);
   if (fromMsg) return [fromMsg];
@@ -163,8 +172,12 @@ export async function detectProject(
   }
 
   // Ưu tiên 2.3: Đọc nội dung bài viết / bài quảng cáo Facebook (Post text / Ad creative body)
-  if (referral && (referral.post_id || referral.ad_id) && pageToken) {
-    const postContent = await getFBPostContent({ post_id: referral.post_id, ad_id: referral.ad_id }, pageToken, pageId);
+  if (referral && (referral.post_id || referral.ad_id || referral.photo_url) && pageToken) {
+    const postContent = await getFBPostContent(
+      { post_id: referral.post_id, ad_id: referral.ad_id, photo_url: referral.photo_url },
+      pageToken,
+      pageId
+    );
     if (postContent) {
       const fromPostText = await matchProject(postContent);
       if (fromPostText) {

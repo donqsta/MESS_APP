@@ -43,13 +43,23 @@ export async function GET() {
       adKeywords: p.adKeywords ?? [],
       domains: p.domains,
       pageIds: p.pageIds ?? [],
+      postIds: p.postIds ?? [],
+      adIds: p.adIds ?? [],
     })),
   });
 }
 
 export async function PUT(req: NextRequest) {
   try {
-    const body = await req.json() as { id: number; keywords: string[]; adKeywords?: string[]; domains: string[]; pageIds?: string[] };
+    const body = await req.json() as {
+      id: number;
+      keywords?: string[];
+      adKeywords?: string[];
+      domains?: string[];
+      pageIds?: string[];
+      postIds?: string[];
+      adIds?: string[];
+    };
     if (typeof body.id !== "number") {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
@@ -58,6 +68,8 @@ export async function PUT(req: NextRequest) {
       adKeywords: Array.isArray(body.adKeywords) ? body.adKeywords.map(String).filter(Boolean) : undefined,
       domains:    Array.isArray(body.domains)    ? body.domains.map(String).filter(Boolean)    : undefined,
       pageIds:    Array.isArray(body.pageIds)    ? body.pageIds.map(String).filter(Boolean)    : undefined,
+      postIds:    Array.isArray(body.postIds)    ? body.postIds.map(String).filter(Boolean)    : undefined,
+      adIds:      Array.isArray(body.adIds)      ? body.adIds.map(String).filter(Boolean)      : undefined,
     });
     return NextResponse.json({ success: true });
   } catch (err) {

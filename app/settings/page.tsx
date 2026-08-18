@@ -15,6 +15,8 @@ interface ProjectEntry {
   adKeywords?: string[];
   domains: string[];
   pageIds: string[];
+  postIds?: string[];
+  adIds?: string[];
 }
 
 // Tag input component
@@ -64,7 +66,14 @@ export default function SettingsPage() {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [editState, setEditState] = useState<Record<number, { keywords: string[]; adKeywords?: string[]; domains: string[]; pageIds: string[] }>>({});
+  const [editState, setEditState] = useState<Record<number, {
+    keywords: string[];
+    adKeywords?: string[];
+    domains: string[];
+    pageIds: string[];
+    postIds?: string[];
+    adIds?: string[];
+  }>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
 
@@ -98,25 +107,33 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       setTestResult(data);
-    } catch (err) {
-      setTestResult({ success: false, error: String(err) });
+    } catch {
+      setTestResult({ success: false, error: "Lỗi kết nối API" });
     } finally {
       setTestLoading(false);
     }
   }
 
-  const loadProjects = useCallback(() => {
-    fetch("/api/bot/sync-projects")
-      .then((r) => r.json())
-      .then((d) => setProjects(d.projects ?? []))
-      .catch(() => {});
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bot/sync-projects");
+      const data = await res.json();
+      if (data.projects) setProjects(data.projects);
+    } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { loadProjects(); }, [loadProjects]);
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bot/settings");
+      const data = await res.json();
+      setSettings(data);
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
-    fetch("/api/bot/settings").then((r) => r.json()).then(setSettings).catch(console.error);
-  }, []);
+    loadSettings();
+    loadProjects();
+  }, [loadSettings, loadProjects]);
 
   async function toggleDefault() {
     if (!settings) return;
@@ -151,7 +168,7 @@ export default function SettingsPage() {
   }
 
   async function syncProjects(fillEmpty = false) {
-    setSyncStatus(fillEmpty ? "Đang sync + AI suggest keywords..." : "Đang sync từ Getfly...");
+    setSyncStatus("Đang đồng bộ...");
     try {
       const res = await fetch("/api/bot/sync-projects", {
         method: "POST",
@@ -163,7 +180,7 @@ export default function SettingsPage() {
         setSyncStatus(`✓ ${data.message}`);
         loadProjects();
       } else {
-        setSyncStatus(`✗ ${data.error}`);
+        setSyncStatus(`✗ Lỗi: ${data.error}`);
       }
     } catch {
       setSyncStatus("✗ Lỗi kết nối");
@@ -185,6 +202,8 @@ export default function SettingsPage() {
             adKeywords: [...(p.adKeywords ?? [])],
             domains: [...p.domains],
             pageIds: [...(p.pageIds ?? [])],
+            postIds: [...(p.postIds ?? [])],
+            adIds: [...(p.adIds ?? [])],
           },
         }));
       }
@@ -205,6 +224,8 @@ export default function SettingsPage() {
           adKeywords: patch.adKeywords,
           domains: patch.domains,
           pageIds: patch.pageIds,
+          postIds: patch.postIds,
+          adIds: patch.adIds,
         }),
       });
       const data = await res.json();
@@ -341,9 +362,13 @@ export default function SettingsPage() {
                 adKeywords: p.adKeywords ?? [],
                 domains: p.domains,
                 pageIds: p.pageIds ?? [],
+                postIds: p.postIds ?? [],
+                adIds: p.adIds ?? [],
               };
               const isSaving = savingId === p.id;
               const isSaved  = savedId  === p.id;
+
+              const totalAdIds = (p.postIds?.length ?? 0) + (p.adIds?.length ?? 0);
 
               return (
                 <div key={p.id}>
@@ -354,6 +379,11 @@ export default function SettingsPage() {
                   >
                     <span className="text-xs text-gray-400 w-6 shrink-0">#{p.id}</span>
                     <span className="text-sm font-medium text-gray-800 flex-1">{p.name}</span>
+                    {totalAdIds > 0 && (
+                      <span className="text-xs text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded font-medium">
+                        {totalAdIds} Post/Ad ID
+                      </span>
+                    )}
                     {p.keywords.length === 0 && (p.adKeywords ?? []).length === 0 && p.id !== 41 && (
                       <span className="text-xs text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded">no keywords</span>
                     )}
@@ -364,6 +394,30 @@ export default function SettingsPage() {
                   {isExpanded && (
                     <div className="px-5 pb-4 bg-gray-50 border-t border-gray-100 space-y-3">
                       <div className="pt-3">
+                        <label className="block text-xs font-medium text-purple-800 mb-1 font-semibold flex items-center gap-1">
+                          <Megaphone className="w-3 h-3 text-purple-600" />
+                          Mã bài viết Ads (Post IDs) <span className="text-gray-500 font-normal">(Ưu tiên số 1 khi lead click vào bài post quảng cáo này)</span>
+                        </label>
+                        <TagInput
+                          value={edit.postIds ?? []}
+                          onChange={(v) => setEditState((prev) => ({ ...prev, [p.id]: { ...edit, postIds: v } }))}
+                          placeholder="vd: 1494693932697334, 1616213960509971..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-indigo-800 mb-1 font-semibold flex items-center gap-1">
+                          <Megaphone className="w-3 h-3 text-indigo-600" />
+                          Mã quảng cáo (Ad IDs) <span className="text-gray-500 font-normal">(Khớp trực tiếp từ ad_id của chiến dịch FB Ads)</span>
+                        </label>
+                        <TagInput
+                          value={edit.adIds ?? []}
+                          onChange={(v) => setEditState((prev) => ({ ...prev, [p.id]: { ...edit, adIds: v } }))}
+                          placeholder="vd: 120249764571160673, 52561601589905..."
+                        />
+                      </div>
+
+                      <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                           Keywords tin nhắn <span className="text-gray-400 font-normal">(từ khóa xuất hiện trong chat)</span>
                         </label>
@@ -426,6 +480,8 @@ export default function SettingsPage() {
                                 adKeywords: [...(p.adKeywords ?? [])],
                                 domains: [...p.domains],
                                 pageIds: [...(p.pageIds ?? [])],
+                                postIds: [...(p.postIds ?? [])],
+                                adIds: [...(p.adIds ?? [])],
                               },
                             }));
                           }}
