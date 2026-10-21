@@ -247,6 +247,49 @@ export function updateProject(
   console.log(`[ProjectMatcher] Updated project ID ${id}:`, patch);
 }
 
+// ── Gắn nhanh 1 Post ID / Ad ID vào dự án ────────────────────────────────────
+
+/**
+ * So sánh 2 ID Facebook: post ID có thể ở dạng "{pageId}_{postId}" hoặc chỉ "{postId}".
+ */
+export function sameFbId(a: string, b: string): boolean {
+  const x = a.trim();
+  const y = b.trim();
+  if (!x || !y) return false;
+  return x === y || x.split("_").pop() === y.split("_").pop();
+}
+
+/**
+ * Gắn 1 post/ad vào dự án (gỡ khỏi dự án cũ nếu có). projectId = null → chỉ gỡ.
+ */
+export function assignContentToProject(
+  kind: "post" | "ad",
+  contentId: string,
+  projectId: number | null
+): void {
+  const config = loadConfig();
+  const key = kind === "post" ? "postIds" : "adIds";
+
+  if (projectId !== null && !config.projects.some((p) => p.id === projectId)) {
+    throw new Error(`Không tìm thấy project ID ${projectId}`);
+  }
+
+  for (const project of config.projects) {
+    const ids = project[key];
+    if (ids?.some((id) => sameFbId(id, contentId))) {
+      project[key] = ids.filter((id) => !sameFbId(id, contentId));
+    }
+  }
+  if (projectId !== null) {
+    const target = config.projects.find((p) => p.id === projectId)!;
+    target[key] = [...(target[key] ?? []), contentId.trim()];
+  }
+
+  writeConfig(config);
+  global.__projectConfig = undefined;
+  console.log(`[ProjectMatcher] Gắn ${kind} ${contentId} → project ${projectId ?? "(gỡ)"}`);
+}
+
 // ── Sync từ Getfly API ───────────────────────────────────────────────────────
 
 const GETFLY_BASE_URL = process.env.GETFLY_BASE_URL ?? "";

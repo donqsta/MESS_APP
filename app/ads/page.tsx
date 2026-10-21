@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { RefreshCw, Megaphone, MessageSquare, ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { ProjectAssignSelect, AssignableProject } from "@/components/AdPostManager";
 
 interface AdLead {
   senderId: string;
@@ -28,6 +29,17 @@ interface AdLead {
 export default function AdsPage() {
   const [leads, setLeads] = useState<AdLead[]>([]);
   const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState<AssignableProject[]>([]);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bot/sync-projects");
+      const data = await res.json();
+      setProjects(data.projects ?? []);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -159,6 +171,24 @@ export default function AdsPage() {
                       <InfoRow label="Sender ID" value={lead.senderId} />
                       <InfoRow label="Source" value={lead.referral.source} />
                     </div>
+
+                    {/* Gắn post/ad này vào dự án — các khách sau sẽ tự nhận đúng dự án */}
+                    {(lead.referral.post_id || lead.referral.ad_id) && (
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
+                        {lead.referral.post_id && (
+                          <span className="flex items-center gap-1.5">
+                            Gắn Post:
+                            <ProjectAssignSelect projects={projects} kind="post" contentId={lead.referral.post_id} onChanged={fetchProjects} />
+                          </span>
+                        )}
+                        {lead.referral.ad_id && (
+                          <span className="flex items-center gap-1.5">
+                            Gắn Ad:
+                            <ProjectAssignSelect projects={projects} kind="ad" contentId={lead.referral.ad_id} onChanged={fetchProjects} />
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

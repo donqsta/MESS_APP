@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Bot, ChevronLeft, RotateCcw, Zap, MessageSquare, RefreshCw, ChevronDown, ChevronUp, Check, X, Megaphone, Search } from "lucide-react";
 import Link from "next/link";
+import AdPostManager from "@/components/AdPostManager";
 
 interface BotSettings {
   defaultEnabled: boolean;
@@ -19,20 +20,41 @@ interface ProjectEntry {
   adIds?: string[];
 }
 
+/**
+ * Cho phép dán link Facebook thay vì ID:
+ *   facebook.com/{page}/posts/{id}, permalink.php?story_fbid={id}, ?fbid=, /videos/{id}, ?ad_id=...
+ */
+function extractFbId(raw: string): string {
+  const s = raw.trim();
+  if (!/^https?:\/\//i.test(s)) return s;
+  try {
+    const url = new URL(s);
+    for (const key of ["story_fbid", "fbid", "ad_id", "selected_ad_ids", "id"]) {
+      const v = url.searchParams.get(key);
+      if (v && /^\d+$/.test(v)) return v;
+    }
+    const m = url.pathname.match(/\/(?:posts|videos|photos|permalink|reel)\/(?:[^/]+\/)?(\d{6,})/);
+    if (m) return m[1];
+  } catch { /* ignore */ }
+  return s;
+}
+
 // Tag input component
 function TagInput({
   value,
   onChange,
   placeholder,
+  normalize,
 }: {
   value: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
+  normalize?: (v: string) => string;
 }) {
   const [input, setInput] = useState("");
 
   function add() {
-    const trimmed = input.trim().toLowerCase();
+    const trimmed = (normalize ? normalize(input) : input).trim().toLowerCase();
     if (trimmed && !value.includes(trimmed)) onChange([...value, trimmed]);
     setInput("");
   }
@@ -118,7 +140,18 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/bot/sync-projects");
       const data = await res.json();
-      if (data.projects) setProjects(data.projects);
+      if (data.projects) {
+        const fresh = data.projects as ProjectEntry[];
+        setProjects(fresh);
+        // Post/Ad IDs có thể đổi từ trình gắn nhanh → đồng bộ vào form đang mở
+        setEditState((prev) => {
+          const nextState = { ...prev };
+          for (const p of fresh) {
+            if (nextState[p.id]) nextState[p.id] = { ...nextState[p.id], postIds: [...(p.postIds ?? [])], adIds: [...(p.adIds ?? [])] };
+          }
+          return nextState;
+        });
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -401,7 +434,8 @@ export default function SettingsPage() {
                         <TagInput
                           value={edit.postIds ?? []}
                           onChange={(v) => setEditState((prev) => ({ ...prev, [p.id]: { ...edit, postIds: v } }))}
-                          placeholder="vd: 1494693932697334, 1616213960509971..."
+                          placeholder="Dán ID hoặc link bài viết Facebook..."
+                          normalize={extractFbId}
                         />
                       </div>
 
@@ -413,7 +447,8 @@ export default function SettingsPage() {
                         <TagInput
                           value={edit.adIds ?? []}
                           onChange={(v) => setEditState((prev) => ({ ...prev, [p.id]: { ...edit, adIds: v } }))}
-                          placeholder="vd: 120249764571160673, 52561601589905..."
+                          placeholder="Dán Ad ID hoặc link Ads Manager..."
+                          normalize={extractFbId}
                         />
                       </div>
 
@@ -495,6 +530,21 @@ export default function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* Gắn nhanh Post / Ads vào dự án */}
+        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+            <Megaphone className="w-4 h-4 text-purple-600" />
+            <h2 className="font-semibold text-gray-800 text-sm">Gắn Post / Ads vào dự án</h2>
+          </div>
+          <div className="p-5">
+            <p className="text-xs text-gray-500 mb-3">
+              Chọn dự án ngay cạnh từng bài viết / quảng cáo — lưu tự động, không cần tự tìm ID.
+              Tab <strong>Khách vừa nhắn</strong> liệt kê các post/ad mà khách đã click để nhắn tin.
+            </p>
+            <AdPostManager projects={projects} onChanged={loadProjects} />
           </div>
         </section>
 

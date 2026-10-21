@@ -488,3 +488,144 @@ export async function sendMessage(
 
   return data;
 }
+
+// ── Danh sách bài viết / quảng cáo để gắn dự án ──────────────────────────────
+
+export interface FBContentItem {
+  kind: "post" | "ad";
+  id: string;
+  text: string;
+  picture?: string;
+  permalink?: string;
+  createdTime?: string;
+  status?: string;
+  /** Với ad: post (story) mà quảng cáo đang chạy */
+  postId?: string;
+  /** Với post: bài viết ẩn chỉ dùng cho quảng cáo (dark post) */
+  isAdPost?: boolean;
+}
+
+interface FBPostRaw {
+  id: string;
+  message?: string;
+  story?: string;
+  created_time?: string;
+  full_picture?: string;
+  permalink_url?: string;
+}
+
+function mapPost(p: FBPostRaw, isAdPost: boolean): FBContentItem {
+  return {
+    kind: "post",
+    id: p.id,
+    text: (p.message || p.story || "").trim(),
+    picture: p.full_picture,
+    permalink: p.permalink_url,
+    createdTime: p.created_time,
+    isAdPost,
+  };
+}
+
+/**
+ * Lấy bài viết của Page (gồm cả bài viết ẩn dùng cho quảng cáo nếu token có quyền).
+ */
+export async function listPagePosts(
+  pageId: string,
+  pageToken: string,
+  after?: string
+): Promise<{ items: FBContentItem[]; next?: string }> {
+  const params: Record<string, string> = {
+    fields: "id,message,story,created_time,full_picture,permalink_url",
+    limit: "25",
+  };
+  if (after) params.after = after;
+
+  const [published, adsPosts] = await Promise.allSettled([
+    fbFetch<{ data: FBPostRaw[]; paging?: { cursors?: { after?: string }; next?: string } }>(
+      `/${pageId}/posts`, pageToken, params
+    ),
+    // Dark posts chỉ hiện ở trang đầu — cần quyền pages_manage_ads, lỗi thì bỏ qua
+    after
+      ? Promise.resolve({ data: [] as FBPostRaw[] })
+      : fbFetch<{ data: FBPostRaw[] }>(`/${pageId}/ads_posts`, pageToken, {
+          fields: params.fields,
+          limit: "25",
+        }),
+  ]);
+
+  if (published.status === "rejected" && adsPosts.status === "rejected") {
+    throw published.reason;
+  }
+
+  const items = new Map<string, FBContentItem>();
+  if (published.status === "fulfilled") {
+    for (const p of published.value.data ?? []) items.set(p.id, mapPost(p, false));
+  }
+  if (adsPosts.status === "fulfilled") {
+    for (const p of adsPosts.value.data ?? []) {
+      if (!items.has(p.id)) items.set(p.id, mapPost(p, true));
+    }
+  }
+
+  const sorted = [...items.values()].sort(
+    (a, b) => (b.createdTime ?? "").localeCompare(a.createdTime ?? "")
+  );
+  const next =
+    published.status === "fulfilled" && published.value.paging?.next
+      ? published.value.paging.cursors?.after
+      : undefined;
+  return { items: sorted, next };
+}
+
+/**
+ * Lấy danh sách quảng cáo của một tài khoản quảng cáo (cần token có quyền ads_read).
+ */
+export async function listAdAccountAds(
+  adAccountId: string,
+  token: string,
+  after?: string
+): Promise<{ items: FBContentItem[]; next?: string }> {
+  const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+  const params: Record<string, string> = {
+    fields:
+      "id,name,effective_status,created_time,campaign{name},adset{name}," +
+      "creative{title,body,thumbnail_url,image_url,effective_object_story_id}",
+    limit: "50",
+  };
+  if (after) params.after = after;
+
+  const data = await fbFetch<{
+    data: Array<{
+      id: string;
+      name?: string;
+      effective_status?: string;
+      created_time?: string;
+      campaign?: { name?: string };
+      adset?: { name?: string };
+      creative?: {
+        title?: string;
+        body?: string;
+        thumbnail_url?: string;
+        image_url?: string;
+        effective_object_story_id?: string;
+      };
+    }>;
+    paging?: { cursors?: { after?: string }; next?: string };
+  }>(`/${accountId}/ads`, token, params);
+
+  const items: FBContentItem[] = (data.data ?? []).map((ad) => {
+    const header = [ad.campaign?.name, ad.adset?.name, ad.name].filter(Boolean).join(" › ");
+    const body = [ad.creative?.title, ad.creative?.body].filter(Boolean).join(" — ");
+    return {
+      kind: "ad",
+      id: ad.id,
+      text: [header, body].filter(Boolean).join("\n"),
+      picture: ad.creative?.image_url || ad.creative?.thumbnail_url,
+      createdTime: ad.created_time,
+      status: ad.effective_status,
+      postId: ad.creative?.effective_object_story_id,
+    };
+  });
+
+  return { items, next: data.paging?.next ? data.paging.cursors?.after : undefined };
+}
