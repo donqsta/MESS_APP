@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Megaphone, FileText, Inbox, RefreshCw, Search, ExternalLink, Check, Loader2 } from "lucide-react";
+import { Megaphone, FileText, Inbox, RefreshCw, Search, ExternalLink, Check, Loader2, Library } from "lucide-react";
 
 export interface AssignableProject {
   id: number;
@@ -26,6 +26,11 @@ interface ContentItem {
 type Source = "posts" | "ads" | "leads";
 
 const FALLBACK_ID = 41;
+
+/** Thư viện Quảng cáo: xem mọi QC đang chạy của page, kể cả do BM khác chạy. */
+export function adLibraryUrl(pageId: string): string {
+  return `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=VN&view_all_page_id=${pageId}`;
+}
 
 /** Post ID có thể là "{pageId}_{postId}" hoặc "{postId}" — so theo phần cuối. */
 function sameFbId(a: string, b: string): boolean {
@@ -214,6 +219,18 @@ export default function AdPostManager({
             className="flex-1 text-xs outline-none bg-transparent"
           />
         </div>
+        {source !== "ads" && pageId && (
+          <a
+            href={adLibraryUrl(pageId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-1.5 rounded-lg whitespace-nowrap"
+            title="Mở Thư viện Quảng cáo của page — xem cả QC do BM khác chạy"
+          >
+            <Library className="w-3.5 h-3.5" />
+            Xem QC đang chạy
+          </a>
+        )}
         <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none">
           <input type="checkbox" checked={onlyUnassigned} onChange={(e) => setOnlyUnassigned(e.target.checked)} />
           Chưa gắn

@@ -51,3 +51,6 @@ data/pending-leads.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ad leads từ webhook (chứa PSID khách hàng)
+data/ad-leads.json
