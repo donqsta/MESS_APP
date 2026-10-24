@@ -23,20 +23,28 @@ interface ProjectEntry {
 /**
  * Cho phép dán link Facebook thay vì ID:
  *   facebook.com/{page}/posts/{id}, permalink.php?story_fbid={id}, ?fbid=, /videos/{id}, ?ad_id=...
+ * Link dạng mới (/posts/pfbid...) được đổi sang ID số qua /api/fb-resolve.
  */
-function extractFbId(raw: string): string {
+async function extractFbId(raw: string): Promise<string> {
   const s = raw.trim();
   if (!/^https?:\/\//i.test(s)) return s;
   try {
     const url = new URL(s);
-    for (const key of ["story_fbid", "fbid", "ad_id", "selected_ad_ids", "id"]) {
-      const v = url.searchParams.get(key);
-      if (v && /^\d+$/.test(v)) return v;
+    if (!url.pathname.startsWith("/ads/library")) {
+      for (const key of ["story_fbid", "fbid", "ad_id", "selected_ad_ids", "id"]) {
+        const v = url.searchParams.get(key);
+        if (v && /^\d+$/.test(v)) return v;
+      }
+      const m = url.pathname.match(/\/(?:posts|videos|photos|permalink|reel)\/(?:[^/]+\/)?(\d{6,})/);
+      if (m) return m[1];
     }
-    const m = url.pathname.match(/\/(?:posts|videos|photos|permalink|reel)\/(?:[^/]+\/)?(\d{6,})/);
-    if (m) return m[1];
-  } catch { /* ignore */ }
-  return s;
+  } catch { return s; }
+
+  const res = await fetch(`/api/fb-resolve?url=${encodeURIComponent(s)}`);
+  const data = await res.json().catch(() => ({})) as { id?: string; error?: string };
+  if (data.id) return data.id;
+  alert(data.error ?? "Không lấy được ID từ link này");
+  return "";
 }
 
 // Tag input component
@@ -49,12 +57,19 @@ function TagInput({
   value: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
-  normalize?: (v: string) => string;
+  normalize?: (v: string) => string | Promise<string>;
 }) {
   const [input, setInput] = useState("");
+  const [resolving, setResolving] = useState(false);
 
-  function add() {
-    const trimmed = (normalize ? normalize(input) : input).trim().toLowerCase();
+  async function add() {
+    if (resolving) return;
+    let raw = input;
+    if (normalize && raw.trim()) {
+      setResolving(true);
+      try { raw = await normalize(raw); } finally { setResolving(false); }
+    }
+    const trimmed = raw.trim().toLowerCase();
     if (trimmed && !value.includes(trimmed)) onChange([...value, trimmed]);
     setInput("");
   }
@@ -74,7 +89,8 @@ function TagInput({
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } }}
         onBlur={add}
-        placeholder={value.length === 0 ? placeholder : ""}
+        disabled={resolving}
+        placeholder={resolving ? "Đang lấy ID từ link..." : value.length === 0 ? placeholder : ""}
         className="flex-1 min-w-[120px] text-xs outline-none bg-transparent text-gray-700 placeholder:text-gray-400"
       />
     </div>

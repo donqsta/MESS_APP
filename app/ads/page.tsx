@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { RefreshCw, Megaphone, MessageSquare, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { ProjectAssignSelect, AssignableProject } from "@/components/AdPostManager";
+import { ProjectAssignSelect, AssignableProject, adLibraryUrl } from "@/components/AdPostManager";
 
 interface AdLead {
   senderId: string;
@@ -213,6 +213,16 @@ export default function AdsPage() {
                       Xem bài quảng cáo
                     </a>
                   )}
+
+                  <a
+                    href={adLibraryUrl(lead.pageId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    QC đang chạy của page
+                  </a>
 
                   {lead.referral.ad_id && (
                     <a
